@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import gamma
 
-a = 1
-b = 1
+a = 0.1
+b = 0.1
 mu = np.linspace( 0, 1, 100 )
 p = gamma( a+b )/gamma( a )/gamma( b )*mu**( a - 1 )*( 1 - mu )**( b - 1)
 
