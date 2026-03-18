@@ -1,10 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import gamma
+# from scipy.integrate import trapz
 
 # Function definitions
 def factorial(num:int): # calculating num! = num*(num-1)*(num-2)*...*3*2*1
-    return num*factorial(num-1) if num > 1 else num
+    return num*factorial(num-1) if num > 1 else num if num > 0 else 1
 
 def combination(pool:int, sample:int): # combinations of size 'sample' from options 'pool'
     return factorial( pool )/factorial( sample )/factorial( pool - sample )
@@ -23,30 +24,35 @@ if __name__ == "__main__":
     
     mu = np.round(np.random.rand(1), decimals=2) # generating the coin's weighting (true theta)
     x = np.random.rand(100) # generating random numbers between 0 and 1 to serve as the coin tosses
-    
     theta_range = np.linspace( start=0, stop=1, num=100 ) # range of theta values to plot the distributions over
-    prior = beta( 1, 1, theta_range ) # setting the prior distribution to be uniform (Beta(1, 1))
+    dtheta = theta_range[1] - theta_range[0]
+
+    prior_HP = [1, 1] # setting the hyperparameters of the prior distribution to be uniform (Beta(1, 1))
+    prior = beta( prior_HP[0], prior_HP[1], theta_range ) # setting the prior distribution to be uniform (Beta(1, 1))
+    # print(f'prior: {prior}')
+    theta_hat = prior_HP[0]/( prior_HP[0] + prior_HP[1] ) # calculating the mean of the prior distribution to serve as our initial guess of the coin's weighting
+    # print(f'theta_hat: {theta_hat}')
+
     plt.plot( theta_range, prior, color='#9A6324', label='Prior') # plotting our initial beliefs of the coin's weighting
 
     success_counter = 0
-    N = len(x)
 
     for i in range(len(x)): # performing inference for each coin toss
-
         if x[i] < mu: # if the coin toss is a success
             success_counter += 1
-            prior = binomial( N, success_counter, success_counter/N ) 
         elif x[i] >= mu: # if the coin toss is a failure
-            prior[1] += 1
+            pass
         else:
             raise ValueError("The true theta could not be compared to the coin toss. Investigate values assigned to x and mu.")
         
+        prior = binomial( i+1, success_counter, theta_range )*prior/np.trapezoid(binomial( i+1, success_counter, theta_range )*prior, dx=dtheta) # calculating the posterior
+
         learning_tests = np.linspace( 0, len(x), 10, dtype=int ) # to show the learning after certain coin tosses
         if i in learning_tests: # plotting the posterior distribution after certain coin tosses to show the learning
-            plt.plot(theta_range, beta(prior[0], prior[1], theta_range), color=colours[np.where(learning_tests == i)[0][0]], label=f'{i+1} tosses') 
+            plt.plot(theta_range, prior, color=colours[np.where(learning_tests == i)[0][0]], label=f'{i+1} tosses') 
 
-plt.title(f'True theta is {mu}\nThe number of heads landed is {sum( i < mu for i in x )[0]}')
-plt.plot( [mu, mu], [0, max( beta(prior[0], prior[1], theta_range))], linestyle=':', color='#000000', label='True theta') # presenting the true theta on the plot
+plt.title(f'True theta is {mu}\nThe number of heads landed is {sum( i < mu for i in x )[0]}')#\nThe final estimate for theta is {theta_hat:.2f}')
+plt.plot( [mu, mu], [0, max( prior )], linestyle=':', color='#000000', label='True theta') # presenting the true theta on the plot
 plt.xlabel('p(heads)=\u03B8')
 plt.ylabel('Probability density')
 plt.legend()
