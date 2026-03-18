@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def factorial(num:int): # calculating num! = num*(num-1)*(num-2)*...*3*2*1
-    return num*factorial(num-1) if num > 1 else num
+    return num*factorial(num-1) if num > 1 else num if num > 0 else 1
 
 def combination(pool:int, sample:int): # combinations of size 'sample' from options 'pool'
     return factorial( pool )/factorial( sample )/factorial( pool - sample )
