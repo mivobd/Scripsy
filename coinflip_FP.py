@@ -28,12 +28,11 @@ if __name__ == "__main__":
     dtheta = theta_range[1] - theta_range[0]
 
     prior_HP = [1, 1] # setting the hyperparameters of the prior distribution to be uniform (Beta(1, 1))
-    prior = beta( prior_HP[0], prior_HP[1], theta_range ) # setting the prior distribution to be uniform (Beta(1, 1))
-    # print(f'prior: {prior}')
-    theta_hat = prior_HP[0]/( prior_HP[0] + prior_HP[1] ) # calculating the mean of the prior distribution to serve as our initial guess of the coin's weighting
-    # print(f'theta_hat: {theta_hat}')
+    distribution = beta( prior_HP[0], prior_HP[1], theta_range ) # setting the prior distribution to be uniform (Beta(1, 1))
+    theta_hat = np.round(prior_HP[0]/( prior_HP[0] + prior_HP[1] ), decimals=2) # calculating the mean of the prior distribution to serve as our initial guess of the coin's weighting
 
-    plt.plot( theta_range, prior, color='#9A6324', label='Prior') # plotting our initial beliefs of the coin's weighting
+    # label = 'Prior, $\hat{\u03B8}$'+f'={theta_hat}'
+    plt.plot( theta_range, distribution, color='#9A6324', label='Prior, $\hat{\u03B8}$'+f'={theta_hat}') # plotting our initial beliefs of the coin's weighting
 
     success_counter = 0
 
@@ -45,14 +44,20 @@ if __name__ == "__main__":
         else:
             raise ValueError("The true theta could not be compared to the coin toss. Investigate values assigned to x and mu.")
         
-        prior = binomial( i+1, success_counter, theta_range )*prior/np.trapezoid(binomial( i+1, success_counter, theta_range )*prior, dx=dtheta) # calculating the posterior
+        distribution = binomial( i+1, success_counter, theta_range )*distribution/np.trapezoid(binomial( i+1, success_counter, theta_range )*distribution, dx=dtheta) # calculating the posterior
+        v = np.var(distribution); # variance of the posterior
+        m = np.mean(distribution); # mean of the posterior 
+        prior_HP[0] = m*v # recalculating a
+        prior_HP[1] = ( 1 - m )*v # recalculating b
+        theta_hat = np.round(prior_HP[0]/( prior_HP[0] + prior_HP[1] ), decimals=2)
+        
 
         learning_tests = np.linspace( 0, len(x), 10, dtype=int ) # to show the learning after certain coin tosses
         if i in learning_tests: # plotting the posterior distribution after certain coin tosses to show the learning
-            plt.plot(theta_range, prior, color=colours[np.where(learning_tests == i)[0][0]], label=f'{i+1} tosses') 
+            plt.plot(theta_range, distribution, color=colours[np.where(learning_tests == i)[0][0]], label=f'{i+1} tosses,'+' $\hat{\u03B8}$'+f'={theta_hat}') 
 
 plt.title(f'True theta is {mu}\nThe number of heads landed is {sum( i < mu for i in x )[0]}')#\nThe final estimate for theta is {theta_hat:.2f}')
-plt.plot( [mu, mu], [0, max( prior )], linestyle=':', color='#000000', label='True theta') # presenting the true theta on the plot
+plt.plot( [mu, mu], [0, max( distribution )], linestyle=':', color='#000000', label='True theta') # presenting the true theta on the plot
 plt.xlabel('p(heads)=\u03B8')
 plt.ylabel('Probability density')
 plt.legend()
