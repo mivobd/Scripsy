@@ -1,6 +1,15 @@
 # Test files
 test.py
 
+# Matlab
+*.slxc
+*.asv
+slprj/
+
+# Simulation results
+data/
+*.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
