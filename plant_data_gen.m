@@ -4,6 +4,8 @@ close all
 clc
 if ~isfolder('data')
     mkdir('data') % directory creation/check -> simulation results stored
+else
+    delete('data/*')
 end
 
 % Parameters
@@ -167,21 +169,29 @@ D.active = dictionary(D.IDs, zeros(25, 1));
 
 %%
 % Data generation
-model.runs = 1; % number of simulation runs
+model.runs = 6; % number of simulation runs
 
     % Simulation
     w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
     for ii = 1:model.runs
         rng("shuffle");
         D.fault = D.IDs(randi([1, numel(D.IDs)]));
-        D.active(D.fault) = 1;
+        if ~ismember(D.fault, ["F3", "F13"])
+            rng("shuffle");
+            D.val = ( 0.25 + rand() ) .* D.dict(D.fault); % disturbance magnitude varies between 25 % and 125 % of its nominal value
+        else 
+            D.val = 0;
+        end
 
+        D.active(D.fault) = 1;
         output = sim("CSTR_Simulink.slx");
         D.active(D.fault) = 0;
 
         results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
         model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
         model.results("fault") = {cell(num2cell(double(char(D.fault))))};
+        model.results("magnitude") = {D.val};
+        model.results("fault time") = {D.time};
         writedictionary( model.results, "data/run_"+ii+".json");
     end
     warning(w); % removing the warning suppression to ensure it is not triggered where not expected
@@ -190,18 +200,23 @@ model.runs = 1; % number of simulation runs
 plotvars = ["h", "Q", "T", "Q_C","C_A"];
 numPlots = numel(plotvars);
 
-for jj = 1:1
-    results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
-    fault = results("fault");
+for jj = 1:model.runs
+    data.results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
+    data.fault = data.results("fault");
     
     figure(jj)
     tile = tiledlayout(numPlots,1);
-    tile.Title.String = char(cell2mat(fault{:})');
+    tile.Title.String = char(cell2mat(data.fault{:})') + ", magnitude: " + string(data.results("magnitude"));
     tile.Title.Interpreter = 'none';
+    data.fault_time = data.results("fault time")
 
     for ii = 1:numPlots
         nexttile
-        plot(cell2mat(results{"t"}), cell2mat(results{plotvars(ii)})) % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
+        data.t = cell2mat(data.results{"t"});
+        data.X = cell2mat(data.results{plotvars(ii)});
+        plot(data.t, data.X) % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
+        hold on
+        plot( data.fault_time{:} .* [1, 1], [max(data.X), min(data.X)] )
         xlim([0, model.d_time])
         xticks({})
     end
@@ -211,3 +226,6 @@ for jj = 1:1
     tile.TileSpacing = 'compact';
 
 end
+
+%%
+plot(data.t, cell2mat(data.results{"Q_CC"}))
