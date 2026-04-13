@@ -101,7 +101,7 @@ SS.h = X(end, 4);
 % Disturbances
 model.time = 120; % minutes
 model.points = 120 ./ (5./60); % measurements recorded, will later be set to 1024
-D.time = model.time - 5 .* ( 1024 - 1 ) ./ 60; % when the disturbance is effected
+D.time = model.time - 5 ./ 60 .* ( 1024 - 1 ); % when the disturbance is effected
 model.d_time = model.time; % will later become disturbance window size
 
 D.IDs = [... ID.        Operating condition.                                    Description.
@@ -202,23 +202,29 @@ numPlots = numel(plotvars);
 
 for jj = 1:model.runs
     data.results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
-    data.fault = data.results("fault");
+    % data.fault = data.results("fault");
+
+    data.window = 100; % number of data points considered for the moving window average
     
     figure(jj)
     tile = tiledlayout(numPlots,1);
-    tile.Title.String = char(cell2mat(data.fault{:})') + ", magnitude: " + string(data.results("magnitude"));
+    tile.Title.String = char(cell2mat(data.results{"fault"})') + ", magnitude: " + string(data.results("magnitude"));
     tile.Title.Interpreter = 'none';
-    data.fault_time = data.results("fault time")
+    % data.fault_time = data.results("fault time")
 
     for ii = 1:numPlots
         nexttile
-        data.t = cell2mat(data.results{"t"});
+        data.t = cell2mat(data.results{"t"}); % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
         data.X = cell2mat(data.results{plotvars(ii)});
-        plot(data.t, data.X) % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
+
+        plot(data.t, data.X) 
         hold on
-        plot( data.fault_time{:} .* [1, 1], [max(data.X), min(data.X)] )
+        plot( data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)] )
         xlim([0, model.d_time])
         xticks({})
+        hold off
+        
+        data.win_mean = ( sum( data.X()) ) ./ ( 5 ./ 60 .* data.window );
     end
     xticks(linspace(0, model.d_time, (model.points-1)/8*5/60))
     xtickformat('%.2f')
@@ -226,6 +232,3 @@ for jj = 1:model.runs
     tile.TileSpacing = 'compact';
 
 end
-
-%%
-plot(data.t, cell2mat(data.results{"Q_CC"}))
