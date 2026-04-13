@@ -5,7 +5,7 @@ clc
 if ~isfolder('data')
     mkdir('data') % directory creation/check -> simulation results stored
 else
-    delete('data/*')
+    delete('data/*') % purge old results -> no between-run mismatch
 end
 
 % Parameters
@@ -73,8 +73,7 @@ SS.C_A = X(end, 1);
 SS.T = X(end, 2);
 SS.T_C = X(end, 3);
 SS.h = X(end, 4);
-
-%% 
+ 
 % Controllers
     % Measurement transmitter gains
     Km_Q = 0.08; % mA min L^{-1}, 
@@ -99,93 +98,31 @@ SS.h = X(end, 4);
     TI_T = 52.2/60; % min, integral time of the outer loop T-Q_C cascade controller
 
 % Disturbances
-model.time = 120; % minutes
-model.points = 120 ./ (5./60); % measurements recorded, will later be set to 1024
-D.time = model.time - 5 ./ 60 .* ( 1024 - 1 ); % when the disturbance is effected
-model.d_time = model.time; % will later become disturbance window size
-
-D.IDs = [... ID.        Operating condition.                                    Description.
-            "F1"; ...   Catalyst deactivation.                                  The activation energy ramps up.
-            "F2"; ...   Heat exchanger fouling.                                 The heat transfer coefficient ramps down.
-            "F3"; ...   Dead coolant flow measurement.                          The coolant flow rate measurement stays at its last value.
-            "F4"; ...   Bias in reactor temperature measurment.                 The reactor temperature measurement has a bias.
-            "F_4"; ...  "                                                       "  
-            ..."F5"; ...   Coolant valve stiction + F7.                            Dead band for stiction = 5 % of the valve span.
-            ..."F_5"; ...  "                                                       "
-            "F6"; ...   Step change in Q_F.                                     Step Change in the feed flow rate.
-            "F_6"; ...  "                                                       "
-            "F7"; ...   Ramp change in C_AF.                                    The feed concentration ramps up or down.
-            "F_7"; ...  "                                                       "
-            "F8"; ...   Ramp change in T_F.                                     The feed temperature ramps up or down.
-            "F_8"; ...  "                                                       "
-            "F9"; ...   Ramp change in T_CF.                                    The coolant feed temperature ramps up or down.
-            "F_9"; ...  "                                                       "
-            "F10"; ...  Step change in P_CU.                                    Step change in upstream pressure in the cooling line.
-            "F_10"; ... "                                                       "
-            "F11"; ...  Step change in P_D.                                     Step change in downstream pressure in the reactor line.
-            "F_11"; ... "                                                       "
-            "F12"; ...  Damped oscillations in Q_F.                             The feed flow rate changes as: exp( -t./33 ) .* sin( 2.*pi().*t ./ 10).
-            "F13"; ...  Autoregressive disturbance in feed flow rate.           Q_F(k) = 0.8.*Q_F.*( k - 1 ) + w(k), w(k)~N(0,1).
-            "S1"; ...   Setpoint change in T.                                   Setpoint change for the reactor temperature.
-            "S_1"; ...  "                                                       "
-            "O1"; ...   High-frequency oscillations in the feed flow rate.      Sinusoidal oscillations of amplitude 10 L min^{-1}.
-            "O2"; ...   Intermediate frequency "                                "
-            "O3"; ...   Intermediate frequency "                                "
-            "O4"; ...   Low-frequency "                                         "
-];
-
-D.mags = [... Nominal value.        Units.
-            3; ...                  K min^{-1}.
-            -125; ...               [J min^{-1} K^{-1}] min^{-1}.
-            NaN; ...                The coolant flow rate measurement stays at its last value.
-            4; ...                  K. 
-            -4; ...                 "
-            ...NaN; ...                Dead band for stiction = 5 % of the valve span.
-            ...NaN; ...                "
-            10; ...                 L min^{-1}.
-            -10; ...                "
-            6e-4; ...               [mol L^{-1}] min^{-1}.
-            -6e-4; ...              "
-            0.1; ...                K min^{-1}.
-            -0.1; ...               "
-            0.1; ...                ".
-            -0.1; ...               "
-            2.5 .* 6894.76; ...     psi .* Pa psi^{-1}.
-            -2.5 .* 6894.76; ...    "
-            5 .* 6894.76; ...       "
-            5 .* 6894.76; ...       "
-            10; ...                 L min^{-1}.
-            NaN; ...                "
-            3; ...                  K.
-            -3; ...                 "
-            3; ...                  cycle min^{-1}.
-            1; ...                  "
-            0.5; ...                "
-            0.2; ...                "
-];
-
-D.dict = dictionary(D.IDs, D.mags);
-D.active = dictionary(D.IDs, zeros(25, 1));
+D.details = readmatrix("fault_details.txt", 'OutputType', 'string');
 
 %%
 % Data generation
+model.time = 120; % min, 
+model.points = 120 ./ (5./60); % measurements recorded, will later be set to 1024
+
+D.time = model.time - 5 ./ 60 .* ( 1024 - 1 ); % min, when the disturbance is effected
+model.d_time = model.time; % min, will later become disturbance window size
+
 model.runs = 6; % number of simulation runs
 
     % Simulation
     w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
     for ii = 1:model.runs
         rng("shuffle");
-        D.fault = D.IDs(randi([1, numel(D.IDs)]));
+        D.fault = D.details(randi([1, numel(D.details(:, 1))]), 1)
         if ~ismember(D.fault, ["F3", "F13"])
             rng("shuffle");
-            D.val = ( 0.25 + rand() ) .* D.dict(D.fault); % disturbance magnitude varies between 25 % and 125 % of its nominal value
-        else 
-            D.val = 0;
+            D.val = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault, 2)); % disturbance magnitude varies between 25 % and 125 % of its nominal value
         end
 
-        D.active(D.fault) = 1;
+        D.active = D.fault;
         output = sim("CSTR_Simulink.slx");
-        D.active(D.fault) = 0;
+        D.active = "";
 
         results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
         model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
@@ -197,34 +134,36 @@ model.runs = 6; % number of simulation runs
     warning(w); % removing the warning suppression to ensure it is not triggered where not expected
 
 %%
-plotvars = ["h", "Q", "T", "Q_C","C_A"];
-numPlots = numel(plotvars);
+plotvars = ["h", "Q", "T", "Q_C","C_A";
+            "dm", "L min^{-1}", "K", "L min^{-1}", "mol L^{-1}"];
+numPlots = numel(plotvars(1, :));
 
 for jj = 1:model.runs
     data.results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
-    % data.fault = data.results("fault");
+    data.fault = char(cell2mat(data.results{"fault"})');
 
-    data.window = 100; % number of data points considered for the moving window average
+    data.window = 200; % number of data points considered for the moving window average
     
     figure(jj)
     tile = tiledlayout(numPlots,1);
-    tile.Title.String = char(cell2mat(data.results{"fault"})') + ", magnitude: " + string(data.results("magnitude"));
+    tile.Title.String = data.fault + " | Magnitude = " + string(data.results("magnitude") + " " + D.details(D.details(:,1) == data.fault, 3));
     tile.Title.Interpreter = 'none';
-    % data.fault_time = data.results("fault time")
 
     for ii = 1:numPlots
         nexttile
         data.t = cell2mat(data.results{"t"}); % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
-        data.X = cell2mat(data.results{plotvars(ii)});
+        data.X = cell2mat(data.results{plotvars(1, ii)});
 
-        plot(data.t, data.X) 
+        plot(data.t, data.X, "k-") 
         hold on
-        plot( data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)] )
+        plot(data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)], "r-")
+        plot(data.t, movmean(data.X, data.window), "b--")
         xlim([0, model.d_time])
+        ylabel( plotvars(1, ii) + " (" + plotvars(2, ii) + ")" )
         xticks({})
         hold off
         
-        data.win_mean = ( sum( data.X()) ) ./ ( 5 ./ 60 .* data.window );
+        data.mean = movmean(data.X, data.window);
     end
     xticks(linspace(0, model.d_time, (model.points-1)/8*5/60))
     xtickformat('%.2f')
