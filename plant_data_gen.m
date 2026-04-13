@@ -2,7 +2,9 @@
 clearvars
 close all
 clc
-mkdir('data') % directory creation/check -> simulation results stored
+if ~isfolder('data')
+    mkdir('data') % directory creation/check -> simulation results stored
+end
 
 % Parameters
     % Equipment dimensions
@@ -64,20 +66,12 @@ X_nominal = [... % initial guesses, values from Wong, J. C. Y.. 2006. Fault dete
 X_SS = fsolve(@(X) dXdt(0, X), X_nominal, optimset('Display', 'off')); % first estimate from fsolve is not sufficient
 
 tspan = linspace(0, 100, 1000);
-[t X] = ode15s(dXdt, tspan, X_nominal); % using ode15s because of the system of equations displays stiff behaviour
+[~, X] = ode15s(dXdt, tspan, X_nominal); % using ode15s because of the system of equations displays stiff behaviour
 SS.C_A = X(end, 1);
 SS.T = X(end, 2);
 SS.T_C = X(end, 3);
 SS.h = X(end, 4);
 
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( 1.73e-12 .* ( P_U - P_D ) ./ g_s) .* 1000 )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( 1.73e-12 .* ( P_U - P_D ) ./ g_s) .* 3600 )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( 1.73e-12 .* ( P_U - P_D ) ./ g_s) .* 1000 .* 3600 )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( 1.73e-12 .* ( P_U - P_D ) ./ g_s) )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( ( P_U - P_D ) ./ g_s) .* 1000 )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( ( P_U - P_D ) ./ g_s) .* 3600 )
-% l_ss = Q_F(0) ./ ( Cv .* sqrt( ( P_U - P_D ) ./ g_s) .* 1000 .* 3600 )
-% l_D.mag.ss = Q_F(0) ./ ( Cv .* sqrt( ( P_U - P_D ) ./ g_s) )
 %% 
 % Controllers
     % Measurement transmitter gains
@@ -103,7 +97,10 @@ SS.h = X(end, 4);
     TI_T = 52.2/60; % min, integral time of the outer loop T-Q_C cascade controller
 
 % Disturbances
-time = 5 .* ( 1024 - 1 ) ./ 60;
+model.time = 120; % minutes
+model.points = 120 ./ (5./60); % measurements recorded, will later be set to 1024
+D.time = model.time - 5 .* ( 1024 - 1 ) ./ 60; % when the disturbance is effected
+model.d_time = model.time; % will later become disturbance window size
 
 D.IDs = [... ID.        Operating condition.                                    Description.
             "F1"; ...   Catalyst deactivation.                                  The activation energy ramps up.
@@ -170,28 +167,47 @@ D.active = dictionary(D.IDs, zeros(25, 1));
 
 %%
 % Data generation
-runs = 8; % number of simulation runs
+model.runs = 1; % number of simulation runs
 
     % Simulation
     w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
-    for i = 1:runs
+    for ii = 1:model.runs
+        rng("shuffle");
+        D.fault = D.IDs(randi([1, numel(D.IDs)]));
+        D.active(D.fault) = 1;
+
         output = sim("CSTR_Simulink.slx");
+        D.active(D.fault) = 0;
+
         results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
-        writedictionary( dictionary(string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data)), "data/run_"+i+".json");
+        model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
+        model.results("fault") = {cell(num2cell(double(char(D.fault))))};
+        writedictionary( model.results, "data/run_"+ii+".json");
     end
     warning(w); % removing the warning suppression to ensure it is not triggered where not expected
 
 %%
-    % Plotting
-    t = tiledlayout(runs,1); % presentation
-    for i = 1:runs
+plotvars = ["h", "Q", "T", "Q_C","C_A"];
+numPlots = numel(plotvars);
+
+for jj = 1:1
+    results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
+    fault = results("fault");
+    
+    figure(jj)
+    tile = tiledlayout(numPlots,1);
+    tile.Title.String = char(cell2mat(fault{:})');
+    tile.Title.Interpreter = 'none';
+
+    for ii = 1:numPlots
         nexttile
-        results = readdictionary("data/run_"+i+"_results.json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
-        plot(cell2mat(results{"t"}), cell2mat(results{"Q"})) % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
-        xlim([0, time])
+        plot(cell2mat(results{"t"}), cell2mat(results{plotvars(ii)})) % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
+        xlim([0, model.d_time])
         xticks({})
     end
-    xticks(linspace(0, time, (time/5*60*+1)/8*5/60))
+    xticks(linspace(0, model.d_time, (model.points-1)/8*5/60))
     xtickformat('%.2f')
-    t.Padding = 'compact';
-    t.TileSpacing = 'compact';
+    tile.Padding = 'compact';
+    tile.TileSpacing = 'compact';
+
+end
