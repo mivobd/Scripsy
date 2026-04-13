@@ -1,0 +1,26 @@
+Var1,Var2,Var3
+F1,3,K / min
+F2,-125,[J / min / K] / min
+F3,NaN,
+F4,4,K
+F_4,-4,K
+F6,10,L / min
+F_6,-10,L / min
+F7,6e-4,[mol / L] / min
+F_7,-6e-4,[mol / L] / min
+F8,0.1,K / min
+F_8,-0.1,K / min
+F9,0.1,K / min
+F_9,-0.1,K / min
+F10,17236.9,Pa
+F_10,-17236.9,Pa
+F11,34473.8,Pa
+F_11,-34473.8,Pa
+F12,10,L / min
+F13,NaN,
+S1,3,K
+S_1,-3,K
+O1,3,cycle / min
+O2,1,cycle / min
+O3,0.5,cycle / min
+O4,0.2,cycle / min
