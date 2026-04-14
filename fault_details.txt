@@ -20,7 +20,7 @@ F12,10,L / min
 F13,NaN,
 S1,3,K
 S_1,-3,K
-O1,3,cycle / min
-O2,1,cycle / min
-O3,0.5,cycle / min
-O4,0.2,cycle / min
+O1,10,L / min
+O2,10,L / min
+O3,10,L / min
+O4,10,L / min

@@ -9,6 +9,7 @@ slprj/
 # Simulation results
 data/
 *.json
+/good
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

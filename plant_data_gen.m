@@ -114,10 +114,12 @@ model.runs = 6; % number of simulation runs
     w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
     for ii = 1:model.runs
         rng("shuffle");
-        D.fault = D.details(randi([1, numel(D.details(:, 1))]), 1)
+        D.fault = D.details(randi([1, numel(D.details(:, 1))]), 1);
         if ~ismember(D.fault, ["F3", "F13"])
             rng("shuffle");
             D.val = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault, 2)); % disturbance magnitude varies between 25 % and 125 % of its nominal value
+        else
+            D.val = 1;
         end
 
         D.active = D.fault;
@@ -135,39 +137,51 @@ model.runs = 6; % number of simulation runs
 
 %%
 plotvars = ["h", "Q", "T", "Q_C","C_A";
-            "dm", "L min^{-1}", "K", "L min^{-1}", "mol L^{-1}"];
+            "dm", "L / min", "K", "L / min", "mol / L"];
 numPlots = numel(plotvars(1, :));
 
 for jj = 1:model.runs
     data.results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
     data.fault = char(cell2mat(data.results{"fault"})');
 
-    data.window = 200; % number of data points considered for the moving window average
+    data.window = 250; % number of data points considered for the moving window average
     
     figure(jj)
     tile = tiledlayout(numPlots,1);
-    tile.Title.String = data.fault + " | Magnitude = " + string(data.results("magnitude") + " " + D.details(D.details(:,1) == data.fault, 3));
-    tile.Title.Interpreter = 'none';
+    if ~ismember(data.fault, ["F3", "F13"])
+        tile.Title.String = data.fault + " | Magnitude = " + string(data.results("magnitude") + " " + D.details(D.details(:,1) == data.fault, 3));
+        tile.Title.Interpreter = 'none';
+    else
+        tile.Title.String = data.fault;
+        tile.Title.Interpreter = 'none';
+    end
 
     for ii = 1:numPlots
         nexttile
         data.t = cell2mat(data.results{"t"}); % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
         data.X = cell2mat(data.results{plotvars(1, ii)});
 
-        plot(data.t, data.X, "k-") 
+        plot(data.t, data.X, 'linestyle', '-', 'color', '#AAAAAA') 
         hold on
-        plot(data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)], "r-")
-        plot(data.t, movmean(data.X, data.window), "b--")
+
+        if max(data.X) == min(data.X)
+            plot(data.results{"fault time"} .* [1, 1], [data.X .* 0.75, data.X .* 1.25], 'linestyle', '-', 'color', '#FF0000')
+        else
+            plot(data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)], 'linestyle', '-', 'color', '#FF0000')
+        end
+
+        plot(data.t, movmean(data.X, data.window), 'linestyle', '--', 'color', '#000FFF')
+
         xlim([0, model.d_time])
         ylabel( plotvars(1, ii) + " (" + plotvars(2, ii) + ")" )
         xticks({})
         hold off
-        
-        data.mean = movmean(data.X, data.window);
+
     end
-    xticks(linspace(0, model.d_time, (model.points-1)/8*5/60))
-    xtickformat('%.2f')
+    xticks(linspace(0, model.d_time, (model.points-1)/9*5/60))
+    xtickformat('%.1f')
     tile.Padding = 'compact';
     tile.TileSpacing = 'compact';
 
 end
+%%
