@@ -26,7 +26,32 @@ end
     % Valve equations
     Cv = 44.4; % m^{3.5} kg^{-0.5}, reactor line valve coefficient
     Cv_C = 9.5; % m^{3.5} kg^{-0.5}, coolant line valve coefficient
-    g_s = 1; % unitless, specific gravity of the fluid
+    g_s = 1; % ~, specific gravity of the fluid
+
+    % Valve dynamics
+    K = 1./16; % mA^{-1}, valve gain from controller signal
+    tau = 2./60; % min, time constant for valve change from controller signal
+
+    % h-Q cascade tuning parameters
+    Kc_Q = 0.2; % mA min L^{-1}, gain of the inner loop h-Q cascade controller
+    TI_Q = 1.7/60; % min, integral time of the inner loop h-Q cascade controller
+    Kc_h = -3.0; % L min^{-1} dm^{-1}, gain of the outer loop h-Q cascade controller
+    TI_h = 1.5; % min, integral time of the outer loop h-Q cascade controller
+
+    % T-Q_C cascade tuning parameters
+    Kc_Q_C = 0.2; % mA min L^{-1}, gain of the inner loop T-Q_C cascade controller
+    TI_Q_C = 1.7/60; % min, integral time of the inner loop T-Q_C cascade controller
+    Kc_T = -2.0; % L min^{-1} K^{-1}, gain of the outer loop T-Q_C cascade controller
+    TI_T = 52.2/60; % min, integral time of the outer loop T-Q_C cascade controller
+
+    % Measurement transmitter gains
+    Km_Q = 0.08; % mA min L^{-1}, 
+    Km_Q_C = 8/15; % mA min L^{-1}, 
+    Km_T = 8./402.35; % mA K^{-1}, 
+    Km_h = 4/3; % mA dm^{-1}, 
+
+% Disturbances
+D.details = readmatrix("fault_details.txt", 'OutputType', 'string');
 
 % Variables
     % Disturbance variables
@@ -42,8 +67,23 @@ end
     SS.P_CD = 1.01e5; % Pa, coolant line downstream pressure
 
     % Manipulated variables
-    SS.lQ = SS.Q ./ ( Cv .* sqrt( 1.73e-12 .* ( SS.P_U - SS.P_D ) ./ g_s) .* 1000 );  
-    SS.lQ_C = SS.Q_C ./ ( Cv .* sqrt( 1.73e-12 .* ( SS.P_CU - SS.P_CD ) ./ g_s) .* 1000 );
+    level_change = 1; % valve is moved 100 % open from completely closed
+    signal_to_valve_function = level_change / K; % mA
+
+    SS.lQ = SS.Q / ( signal_to_valve_function / Kc_Q ); % ~, steady state valve level for the feed flow rate
+    SS.lQ_C = SS.Q_C / ( signal_to_valve_function / Kc_Q_C ); % ~, steady state valve level for the coolant flow rate
+
+    N.Q = ( SS.Q ./ 1000 ) ./ ( Cv .* SS.lQ .* sqrt( ( SS.P_U - SS.P_D ) ./ g_s) ); % conversion factor, sqrt(1.73e12) in Wong's thesis, assuming a typo then sqrt(1.73e-12)
+    N.Q_C = ( SS.Q_C ./ 1000 ) ./ ( Cv .* SS.lQ_C .* sqrt( ( SS.P_CU - SS.P_CD ) ./ g_s ) ); % conversion factor, sqrt(1.73e12) in Wong's thesis, assuming a typo then sqrt(1.73e-12)
+    
+    % N.Q = sqrt(1.73e-12);
+    % N.Q_C = sqrt(1.73e-12);
+    % 
+    % SS.lQ = ( SS.Q ./ 1000 ) ./ ( Cv .* N.Q .* sqrt( ( SS.P_U - SS.P_D ) ./ g_s ) );
+    % SS.lQ_C = ( SS.Q_C ./ 1000 ) ./ ( Cv .* N.Q_C .* sqrt( ( SS.P_CU - SS.P_CD ) ./ g_s ) );
+    % 
+    % SS.lQ
+    % SS.lQ_C 
 
 % ODEs
 dXdt = @(t, X) [ ... where X = [C_A; % mol L^{-1}, concentration of species A inside reactor
@@ -67,75 +107,64 @@ X_nominal = [... % initial guesses, values from Wong, J. C. Y.. 2006. Fault dete
 % Steady state values
 X_SS = fsolve(@(X) dXdt(0, X), X_nominal, optimset('Display', 'off')); % first estimate from fsolve is not sufficient
 
-tspan = linspace(0, 100, 1000);
-[~, X] = ode15s(dXdt, tspan, X_nominal); % using ode15s because of the system of equations displays stiff behaviour
+tspan = linspace(0, 100, 10000);
+[~, X] = ode23s(dXdt, tspan, X_nominal); % using ode15s because of the system of equations displays stiff behaviour
 SS.C_A = X(end, 1);
 SS.T = X(end, 2);
 SS.T_C = X(end, 3);
 SS.h = X(end, 4);
- 
-% Controllers
-    % Measurement transmitter gains
-    Km_Q = 0.08; % mA min L^{-1}, 
-    Km_Q_C = 8./15; % mA min L^{-1}, 
-    Km_T = 8./402.35; % mA K^{-1}, 
-    Km_h = 4./3; % mA dm^{-1}, 
 
-    % Valve dynamics
-    K = 1./16; % mA^{-1}, valve gain from controller signal
-    tau = 2./60; % min, time constant for valve change from controller signal
+% figure(1)
+% plot(tspan, X(:, 1))
+% figure(2)
+% plot(tspan, X(:, 2))
+% figure(3)
+% plot(tspan, X(:, 3))
+% figure(4)
+% plot(tspan, X(:, 4))
 
-    % h-Q cascade
-    Kc_Q = 0.2; % mA min L^{-1}, gain of the inner loop h-Q cascade controller
-    TI_Q = 1.7/60; % min, integral time of the inner loop h-Q cascade controller
-    Kc_h = -3.0; % L min^{-1} dm^{-1}, gain of the outer loop h-Q cascade controller
-    TI_h = 1.5; % min, integral time of the outer loop h-Q cascade controller
-
-    % T-Q_C cascade
-    Kc_Q_C = 0.2; % mA min L^{-1}, gain of the inner loop T-Q_C cascade controller
-    TI_Q_C = 1.7/60; % min, integral time of the inner loop T-Q_C cascade controller
-    Kc_T = -2.0; % L min^{-1} K^{-1}, gain of the outer loop T-Q_C cascade controller
-    TI_T = 52.2/60; % min, integral time of the outer loop T-Q_C cascade controller
-
-% Disturbances
-D.details = readmatrix("fault_details.txt", 'OutputType', 'string');
-
-%%
 % Data generation
-model.time = 120; % min, 
-model.points = 120 ./ (5./60); % measurements recorded, will later be set to 1024
+model.dt = 5./60; % measurement interval
+model.time = 200; % min, 
+model.points = 120 ./ model.dt; % measurements recorded, will later be set to 1024
 
-D.time = model.time - 5 ./ 60 .* ( 1024 - 1 ); % min, when the disturbance is effected
+D.time = model.time - model.dt .* ( 1024 - 1 ); % min, when the disturbance is effected
 model.d_time = model.time; % min, will later become disturbance window size
 
-model.runs = 6; % number of simulation runs
+model.tauf = model.dt.*0; % analogue filter time constant, should be roughly half of the measurement interval (Seborg et al.)
+model.autoreg = 0.8;
 
-    % Simulation
-    w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
-    for ii = 1:model.runs
+model.runs = 1; % number of simulation runs
+D.active = "";
+D.val = 1;
+%%
+% Simulation
+w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
+for ii = 1:model.runs
+    rng("shuffle");
+    D.fault = "F6";%D.details(randi([1, numel(D.details(:, 1))]), 1);
+    if ~ismember(D.fault, ["F3", "F13"])
         rng("shuffle");
-        D.fault = D.details(randi([1, numel(D.details(:, 1))]), 1);
-        if ~ismember(D.fault, ["F3", "F13"])
-            rng("shuffle");
-            D.val = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault, 2)); % disturbance magnitude varies between 25 % and 125 % of its nominal value
-        else
-            D.val = 1;
-        end
-
-        D.active = D.fault;
-        output = sim("CSTR_Simulink.slx");
-        D.active = "";
-
-        results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
-        model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
-        model.results("fault") = {cell(num2cell(double(char(D.fault))))};
-        model.results("magnitude") = {D.val};
-        model.results("fault time") = {D.time};
-        writedictionary( model.results, "data/run_"+ii+".json");
+        D.val = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault, 2)); % disturbance magnitude varies between 25 % and 125 % of its nominal value
+    else
+        D.val = 1;
     end
-    warning(w); % removing the warning suppression to ensure it is not triggered where not expected
+
+    D.active = D.fault;
+    output = sim("CSTR_Simulink.slx");
+    D.active = "";
+
+    results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
+    model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
+    model.results("fault") = {cell(num2cell(double(char(D.fault))))};
+    model.results("magnitude") = {D.val};
+    model.results("fault time") = {D.time};
+    writedictionary( model.results, "data/run_"+ii+".json");
+end
+warning(w); % removing the warning suppression to ensure it is not triggered where not expected
 
 %%
+% Plots
 plotvars = ["h", "Q", "T", "Q_C","C_A";
             "dm", "L / min", "K", "L / min", "mol / L"];
 numPlots = numel(plotvars(1, :));
@@ -185,3 +214,5 @@ for jj = 1:model.runs
 
 end
 %%
+clc
+

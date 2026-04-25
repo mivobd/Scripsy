@@ -1,7 +1,7 @@
 Var1,Var2,Var3
 F1,3,K / min
 F2,-125,[J / min / K] / min
-F3,NaN,
+F3,NaN,~
 F4,4,K
 F_4,-4,K
 F6,10,L / min
@@ -17,7 +17,7 @@ F_10,-17236.9,Pa
 F11,34473.8,Pa
 F_11,-34473.8,Pa
 F12,10,L / min
-F13,NaN,
+F13,NaN,~
 S1,3,K
 S_1,-3,K
 O1,10,L / min
