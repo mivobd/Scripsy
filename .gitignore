@@ -7,9 +7,12 @@ test.py
 slprj/
 
 # Simulation results
-data/
 *.json
-/good
+data/
+NOC/
+S/
+H/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

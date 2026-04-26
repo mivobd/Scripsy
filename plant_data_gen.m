@@ -1,12 +1,51 @@
-% Initialization
+% Housekeeping
 clearvars
 close all
 clc
-if ~isfolder('data')
-    mkdir('data') % directory creation/check -> simulation results stored
+
+% Be forewarned, I made this code my own. This means my comments are not
+% strictly professional. They are still informative and should get the
+% point across just fine. But I also make jokes, because it makes things
+% fun and reading the code less tedious.
+
+%!!! CHECK BEFORE EACH SCRIPT EXECUTION !!!
+
+% I've tried to make it so that you don't have to fiddle around in the
+% simulink file. You can change everything of interest here. Having the
+% simulink file open to view the scopes as it runs might still be worth it.
+
+model.folder = "data"; % Where results are going to be saved (IF THIS FOLDER EXISTS IT WILL BE PURGED)
+model.naming_after_NOC = 1; % boolean, starts file names from 55 onwards, enables compatibility with previously generated NOC data sets (that are moved to a folder different than model.folder before execution)
+
+model.runs = 409; % number of simulation runs to be conducted
+model.disturb = 1; % boolean, incur disturbances or not
+model.plot = 0; % boolean, plot after each run or not
+
+model.noise.P = 0; % boolean, process white noise active or not
+model.noise.M = 1; % boolean, measurement white noise active or not 
+model.noise.AR = 1; % boolean, auto-regressive feed noise active or not
+
+D.force.use = 0; % boolean, force a specific disturance (remember to switch on model.disturb)
+D.force.fault = "S_1"; % fault ID, the fault you want to incur (refer to fault_details.txt)
+D.force.mag = -3; % units as per fault ID (refer to fault_details.txt)
+
+% Initialization
+if ~isfolder(model.folder)
+    mkdir(model.folder) % directory creation/check -> simulation results stored here
 else
-    delete('data/*') % purge old results -> no between-run mismatch
+    delete(model.folder+'/*') % purge old results -> no between-run mismatch
 end
+
+% Model details
+model.dt = 5./60; % measurement interval
+model.time = 120; % min, how long the simulation will run for
+model.points = model.time ./ model.dt; % number of measurements recorded
+
+D.time = model.time - model.dt .* ( 1024 - 1 ); % min, when the disturbance is effected
+model.d_time = model.time - D.time; % min, will later become disturbance window size
+
+model.tauf = model.dt.*1; % analogue filter time constant, should be roughly half of the measurement interval (Seborg et al.)
+model.autoreg = 0.8; % autoregression gain
 
 % Parameters
     % Equipment dimensions
@@ -45,12 +84,17 @@ end
     TI_T = 52.2/60; % min, integral time of the outer loop T-Q_C cascade controller
 
     % Measurement transmitter gains
-    Km_Q = 0.08; % mA min L^{-1}, 
-    Km_Q_C = 8/15; % mA min L^{-1}, 
-    Km_T = 8./402.35; % mA K^{-1}, 
-    Km_h = 4/3; % mA dm^{-1}, 
+    Km_Q = 0.08; % mA min L^{-1}, for the outlet flow rate
+    Km_Q_C = 8/15; % mA min L^{-1}, for the coolant flow rate
+    Km_T = 8./402.35; % mA K^{-1}, for the reactor temperature
+    Km_h = 4/3; % mA dm^{-1}, for the reactor level
+    % unfortunately no other measurement gains were listed in Wong's thesis
+    % (the primary source of Johannesmeyer's values at the time of writing
+    % this - [26/04/2026])
 
 % Disturbances
+% Stored the specifics of each disturbance ID in a separate file to make
+% changes more easily.
 D.details = readmatrix("fault_details.txt", 'OutputType', 'string');
 
 % Variables
@@ -105,15 +149,14 @@ X_nominal = [... % initial guesses, values from Wong, J. C. Y.. 2006. Fault dete
 ];
 
 % Steady state values
-X_SS = fsolve(@(X) dXdt(0, X), X_nominal, optimset('Display', 'off')); % first estimate from fsolve is not sufficient
-
 tspan = linspace(0, 100, 10000);
-[~, X] = ode23s(dXdt, tspan, X_nominal); % using ode15s because of the system of equations displays stiff behaviour
+[~, X] = ode23s(dXdt, tspan, X_nominal); % ODE system is stiff. Tested them all and 23s gave the best performance.
 SS.C_A = X(end, 1);
 SS.T = X(end, 2);
 SS.T_C = X(end, 3);
 SS.h = X(end, 4);
 
+% Can check to see that the new SS is reached
 % figure(1)
 % plot(tspan, X(:, 1))
 % figure(2)
@@ -123,95 +166,118 @@ SS.h = X(end, 4);
 % figure(4)
 % plot(tspan, X(:, 4))
 
-% Data generation
-model.dt = 5./60; % measurement interval
-model.time = 200; % min, 
-model.points = 120 ./ model.dt; % measurements recorded, will later be set to 1024
-
-D.time = model.time - model.dt .* ( 1024 - 1 ); % min, when the disturbance is effected
-model.d_time = model.time; % min, will later become disturbance window size
-
-model.tauf = model.dt.*0; % analogue filter time constant, should be roughly half of the measurement interval (Seborg et al.)
-model.autoreg = 0.8;
-
-model.runs = 1; % number of simulation runs
-D.active = "";
-D.val = 1;
 %%
+% Fault definitions
+if model.disturb == true
+    % Faults are considered
+    D.fault = strings(model.runs, 1);
+    D.mags = zeros(model.runs, 1);
+
+    for ii = 1:model.runs
+        % List of faults
+        if D.force.use == true
+            D.fault(ii) = D.force.fault;
+        else
+            rng("shuffle");
+            D.fault(ii) = D.details(randi([1, numel(D.details(:, 1))]), 1);
+        end
+        
+        % List of magnitudes (same order as faults)
+        if ~ismember(D.fault(ii), ["F3", "F13"]) % these don't have a magnitude, so are treated differently (not ableist I swear...)
+            rng("shuffle");
+            D.mags(ii) = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault(ii), 2)).*~D.force.use + D.force.mag.*D.force.use; % disturbance magnitude varies between 25 % and 125 % of its nominal value
+        else
+            D.mags(ii) = 1;
+        end
+    end
+else
+    % No faults
+    D.active = "";
+    D.val = 1;
+end
+
 % Simulation
 w = warning('off', 'MATLAB:structOnObject'); % unnecessary warning: revealing an object's hidden implementation details
 for ii = 1:model.runs
-    rng("shuffle");
-    D.fault = "F6";%D.details(randi([1, numel(D.details(:, 1))]), 1);
-    if ~ismember(D.fault, ["F3", "F13"])
-        rng("shuffle");
-        D.val = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault, 2)); % disturbance magnitude varies between 25 % and 125 % of its nominal value
-    else
-        D.val = 1;
+
+    % Setting the fault for the run
+    if model.disturb == true
+        D.active = D.fault(ii); 
+        D.val = D.mags(ii);
     end
 
-    D.active = D.fault;
-    output = sim("CSTR_Simulink.slx");
-    D.active = "";
+    output = sim("CSTR_Simulink.slx"); % execute simulation and save results object
 
-    results_struct = struct(output); % simulation output = object -> structure -> (names of variables measured) and (values) stored as dictionary
-    model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) );
-    model.results("fault") = {cell(num2cell(double(char(D.fault))))};
-    model.results("magnitude") = {D.val};
+    % Reformatting the results object into a structure, which can then be
+    % saved into a .json file (alongside details about the fault)
+    results_struct = struct(output);
+    model.results = dictionary( string(fieldnames(results_struct.Data)), struct2cell(results_struct.Data) ); % nasty datatype manipulation
+    model.results("measurements") = {keys(model.results)}; % recording the measurement set taken (makes life easier later, less manual entry)
+    model.results("fault") = {cell(num2cell(double(char(D.active))))}; % forced to used cells for dictionary to be happy
+    model.results("magnitude") = {D.val}; % the curly brackets ensure each dictionary entry is a 1x1 cell 
     model.results("fault time") = {D.time};
-    writedictionary( model.results, "data/run_"+ii+".json");
+    writedictionary( model.results, model.folder+"/run_"+(ii + 54.*model.naming_after_NOC)+".json");
 end
-warning(w); % removing the warning suppression to ensure it is not triggered where not expected
+warning(w); % removing the warning suppression since we no longer expect this warning to be thrown (therefore need to know about it, if it does happen)
 
 %%
 % Plots
-plotvars = ["h", "Q", "T", "Q_C","C_A";
-            "dm", "L / min", "K", "L / min", "mol / L"];
-numPlots = numel(plotvars(1, :));
-
-for jj = 1:model.runs
-    data.results = readdictionary("data/run_"+jj+".json"); % results = keys: string, values: 1x1 cell array: 1024x1 cell
-    data.fault = char(cell2mat(data.results{"fault"})');
-
-    data.window = 250; % number of data points considered for the moving window average
+if model.plot == true % checking if we want to see plots
+    plotvars = ["h", "Q", "T", "Q_C","C_A"; ... % the variables being plotted
+                "dm", "L / min", "K", "L / min", "mol / L"]; % and their units
+    numPlots = numel(plotvars(1, :));
     
-    figure(jj)
-    tile = tiledlayout(numPlots,1);
-    if ~ismember(data.fault, ["F3", "F13"])
-        tile.Title.String = data.fault + " | Magnitude = " + string(data.results("magnitude") + " " + D.details(D.details(:,1) == data.fault, 3));
-        tile.Title.Interpreter = 'none';
-    else
-        tile.Title.String = data.fault;
-        tile.Title.Interpreter = 'none';
-    end
-
-    for ii = 1:numPlots
-        nexttile
-        data.t = cell2mat(data.results{"t"}); % curly brackets: indexes into cell array -> cell2mat: converts cell array to a matrix
-        data.X = cell2mat(data.results{plotvars(1, ii)});
-
-        plot(data.t, data.X, 'linestyle', '-', 'color', '#AAAAAA') 
-        hold on
-
-        if max(data.X) == min(data.X)
-            plot(data.results{"fault time"} .* [1, 1], [data.X .* 0.75, data.X .* 1.25], 'linestyle', '-', 'color', '#FF0000')
+    for jj = 1:model.runs
+        data.results = readdictionary(model.folder+"/run_"+(jj + 54.*model.naming_after_NOC)+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+        data.fault = char(cell2mat(data.results{"fault"})'); % moulding the cell array back into a well-behaved string telling us the fault ID
+    
+        data.window = 250; % number of data points considered for the moving window average
+        
+        figure(jj)
+        tile = tiledlayout(numPlots,1);
+        % Plot title: Fault ID + magnitude + units
+        if ~ismember(data.fault, ["F3", "F13"]) % again, we discrim- I mean treat these differently since they don't have a disturbance magnitude
+            tile.Title.String = data.fault + " | Magnitude = " + string(data.results("magnitude") + " " + D.details(D.details(:,1) == data.fault, 3));
+            tile.Title.Interpreter = 'none';
         else
-            plot(data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)], 'linestyle', '-', 'color', '#FF0000')
+            tile.Title.String = data.fault;
+            tile.Title.Interpreter = 'none';
         end
-
-        plot(data.t, movmean(data.X, data.window), 'linestyle', '--', 'color', '#000FFF')
-
-        xlim([0, model.d_time])
-        ylabel( plotvars(1, ii) + " (" + plotvars(2, ii) + ")" )
-        xticks({})
-        hold off
-
+    
+        for ii = 1:numPlots
+            nexttile
+            data.t = cell2mat(data.results{"t"}); % curly brackets: indexes into (1x1) cell array (which was necessary for a happy dictionary definition), then we use cell2mat: converts cell array to a matrix
+            data.X = cell2mat(data.results{plotvars(1, ii)}); % similar logic as above, but for each variable we want to plot
+    
+            % Plotting the data... finally
+            plot(data.t, data.X, 'linestyle', '-', 'color', '#AAAAAA') 
+            hold on
+    
+            % Indicating where the disturbance happened
+            if max(data.X) == min(data.X)
+                plot(data.results{"fault time"} .* [1, 1], [data.X .* 0.75, data.X .* 1.25], 'linestyle', '-', 'color', '#FF0000')
+            else
+                plot(data.results{"fault time"} .* [1, 1], [max(data.X), min(data.X)], 'linestyle', '-', 'color', '#FF0000')
+            end
+    
+            % Showing what the moving window mean looks like
+            plot(data.t, movmean(data.X, data.window), 'linestyle', '--', 'color', '#000FFF')
+    
+            % Making the formatting nice... hopefully
+            xlim([0, model.d_time])
+            ylabel( plotvars(1, ii) + " (" + plotvars(2, ii) + ")" )
+            xticks({})
+            hold off
+    
+        end
+        % Only the bottom plot needs an x axis with a label and ticks
+        % (there's a joke in there somewhere...)
+        xticks(linspace(0, model.d_time, (model.points-1)/9*5/60))
+        xtickformat('%.1f')
+        tile.Padding = 'compact';
+        tile.TileSpacing = 'compact';
+    
     end
-    xticks(linspace(0, model.d_time, (model.points-1)/9*5/60))
-    xtickformat('%.1f')
-    tile.Padding = 'compact';
-    tile.TileSpacing = 'compact';
-
 end
 %%
 clc
