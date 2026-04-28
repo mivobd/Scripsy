@@ -43,19 +43,30 @@ for ii = 1:data.num_vars
     data.set(:, ii) = cell2mat(data.results{data.measured_vars(ii)});
 end
 
-[data.scaled, data.mean, data.std] = normalize(data.set); % scaling the data
-[data.S.coeff, data.S.score, ~, ~, explained] = pca(data.scaled(data.num_ignore+1:end, :)); % performing PCA, saving convenient stats
+[data.scaled, data.mean, data.std] = normalize(data.set(data.num_ignore+1:end, :)); % scaling the data
+[data.S.coeff, data.S.score, ~, ~, data.explained] = pca(data.scaled); % performing PCA, saving convenient stats
 
 % choosing the number of principle components based on how many are needed
 % to explain 95 % of the variance
-for ii = 1:numel(explained)
-    if sum(explained(1:ii)) > 95
+for ii = 1:numel(data.explained)
+    if sum(data.explained(1:ii)) > 95
         k = ii;
         break
     end
 end
 L = data.S.coeff(:, 1:k); % principal subspace of the snapshot
+PCA_coeff = data.S.coeff;
 
+% eigenvalue decomposition
+test.S.covar = 1./numel(data.scaled(1, :)).*data.scaled'*data.scaled;
+[test.S.V, test.S.D] = eig(test.S.covar);
+[latent, ind] = sort(diag(test.S.D), 'descend');
+covar_eigenvectors = test.S.V(:, ind);
+
+
+
+
+%%
 % Historical data
 jj = 1;
 while isfile(file.folder+"/run_"+jj+".json")
@@ -64,7 +75,7 @@ end
 file.number = jj - 1; % the number of data files
 
 data.S_PCA = zeros(1, file.number);
-
+file.number = 54;
 for jj = 1:file.number
     data.results = readdictionary(file.folder+"/run_"+jj+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     
@@ -74,8 +85,8 @@ for jj = 1:file.number
         data.set(:, ii) = cell2mat(data.results{data.measured_vars(ii)});
     end
 
-    [data.scaled] = normalize(data.set, 'center', data.mean, 'scale', data.std); % scaling the data
-    [data.H.coeff] = pca(data.scaled(data.num_ignore+1:end, :),'NumComponents', k); % performing PCA, saving convenient stats
+    [data.scaled] = normalize(data.set(data.num_ignore+1:end, :), 'center', data.mean, 'scale', data.std); % scaling the data
+    [data.H.coeff] = pca(data.scaled,'NumComponents', k); % performing PCA, saving convenient stats
     M = data.H.coeff(:, 1:k);
 
    
