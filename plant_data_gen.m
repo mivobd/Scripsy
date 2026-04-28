@@ -1,4 +1,4 @@
-% Housekeeping
+%% Housekeeping
 clearvars
 close all
 clc
@@ -14,10 +14,16 @@ clc
 % simulink file. You can change everything of interest here. Having the
 % simulink file open to view the scopes as it runs might still be worth it.
 
-model.folder = "data"; % Where results are going to be saved (IF THIS FOLDER EXISTS IT WILL BE PURGED)
-model.naming_after_NOC = 1; % boolean, starts file names from 55 onwards, enables compatibility with previously generated NOC data sets (that are moved to a folder different than model.folder before execution)
+model.folder = "S"; % Where results are going to be saved 
 
-model.runs = 409; % number of simulation runs to be conducted
+% Are you generating a large data set (comparable, or the same, in size as
+% used by Johannesmeyer?
+runs.full = 0; % Generate the full dataset (463 total, 54 NOC) or not
+runs.NOC = 54; % Number of NOC windows
+runs.fault = 409; % Number of windows with faults
+
+% Below only applies if you are not generating a full data set
+model.runs = 1; % number of simulation runs to be conducted
 model.disturb = 1; % boolean, incur disturbances or not
 model.plot = 0; % boolean, plot after each run or not
 
@@ -25,15 +31,13 @@ model.noise.P = 0; % boolean, process white noise active or not
 model.noise.M = 1; % boolean, measurement white noise active or not 
 model.noise.AR = 1; % boolean, auto-regressive feed noise active or not
 
-D.force.use = 0; % boolean, force a specific disturance (remember to switch on model.disturb)
-D.force.fault = "S_1"; % fault ID, the fault you want to incur (refer to fault_details.txt)
-D.force.mag = -3; % units as per fault ID (refer to fault_details.txt)
+D.force.use = 1; % boolean, force a specific disturance (remember to switch on model.disturb)
+D.force.fault = "F10"; % fault ID, the fault you want to incur (refer to fault_details.txt)
+D.force.mag = 17236.9; % units as per fault ID (refer to fault_details.txt)
 
-% Initialization
+%% Initialization
 if ~isfolder(model.folder)
     mkdir(model.folder) % directory creation/check -> simulation results stored here
-else
-    delete(model.folder+'/*') % purge old results -> no between-run mismatch
 end
 
 % Model details
@@ -166,12 +170,32 @@ SS.h = X(end, 4);
 % figure(4)
 % plot(tspan, X(:, 4))
 
-%%
+%% Data Generation
 % Fault definitions
-if model.disturb == true
+if runs.full == true
+    model.runs = runs.NOC + runs.fault;
+
     % Faults are considered
     D.fault = strings(model.runs, 1);
-    D.mags = zeros(model.runs, 1);
+    D.mags = ones(model.runs, 1);
+
+    D.fault(:) = "N";
+
+    for ii = runs.NOC+1:model.runs
+        % List of faults
+        rng("shuffle");
+        D.fault(ii) = D.details(randi([1, numel(D.details(:, 1))]), 1);
+
+        % List of magnitudes (same order as faults)
+        if ~ismember(D.fault(ii), ["F3", "F13"]) % these don't have a magnitude, so are treated differently (not ableist I swear...)
+            rng("shuffle");
+            D.mags(ii) = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault(ii), 2)).*~D.force.use + D.force.mag.*D.force.use; % disturbance magnitude varies between 25 % and 125 % of its nominal value
+        end
+    end
+elseif model.disturb == true
+    % Faults are considered
+    D.fault = strings(model.runs, 1);
+    D.mags = ones(model.runs, 1);
 
     for ii = 1:model.runs
         % List of faults
@@ -186,13 +210,11 @@ if model.disturb == true
         if ~ismember(D.fault(ii), ["F3", "F13"]) % these don't have a magnitude, so are treated differently (not ableist I swear...)
             rng("shuffle");
             D.mags(ii) = ( 0.25 + rand() ) .* double(D.details( D.details(:, 1) == D.fault(ii), 2)).*~D.force.use + D.force.mag.*D.force.use; % disturbance magnitude varies between 25 % and 125 % of its nominal value
-        else
-            D.mags(ii) = 1;
         end
     end
 else
     % No faults
-    D.active = "";
+    D.active = "N";
     D.val = 1;
 end
 
@@ -216,19 +238,23 @@ for ii = 1:model.runs
     model.results("fault") = {cell(num2cell(double(char(D.active))))}; % forced to used cells for dictionary to be happy
     model.results("magnitude") = {D.val}; % the curly brackets ensure each dictionary entry is a 1x1 cell 
     model.results("fault time") = {D.time};
-    writedictionary( model.results, model.folder+"/run_"+(ii + 54.*model.naming_after_NOC)+".json");
+
+    if isfile(model.folder+"/run_"+ii+".json")
+        delete(model.folder+"/run_"+ii+".json")
+    end
+    writedictionary(model.results, model.folder+"/run_"+ii+".json");
 end
 warning(w); % removing the warning suppression since we no longer expect this warning to be thrown (therefore need to know about it, if it does happen)
 
-%%
+%% Deprecated
 % Plots
-if model.plot == true % checking if we want to see plots
+if model.plot == true && runs.full == false % checking if we want to see plots, or if too many would need to be made
     plotvars = ["h", "Q", "T", "Q_C","C_A"; ... % the variables being plotted
                 "dm", "L / min", "K", "L / min", "mol / L"]; % and their units
     numPlots = numel(plotvars(1, :));
     
     for jj = 1:model.runs
-        data.results = readdictionary(model.folder+"/run_"+(jj + 54.*model.naming_after_NOC)+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+        data.results = readdictionary(model.folder+"/run_"+jj+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
         data.fault = char(cell2mat(data.results{"fault"})'); % moulding the cell array back into a well-behaved string telling us the fault ID
     
         data.window = 250; % number of data points considered for the moving window average
