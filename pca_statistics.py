@@ -39,28 +39,31 @@ num.variables = len(x[0]) # columns
 # print("explained = \n\n", 100 * S**2 / (num.measurements-1) / np.sum(S**2 / (num.measurements-1)), "\n")
 
 
-## Hotelling's T-squared statistic
+# Hotelling's T-squared statistic
 # tsquared_MATLAB = np.sum(t**2/(S**2/(num.measurements-1)), axis=1) # equivalent to MATLAB result, but may not be correct with our references (which use the eigenvalues instead of the covariance matrix)
 # print(tsquared_MATLAB)
 
-# P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
-# t = x@P # I could put this in the line below but that would mean calculating this twice, it is faster to store it to memory and reuse it
-# tsquared = np.array([ t[row, :] @ np.diag( S[:a]**-2 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
-# print(f"tsquared = \n\n{tsquared}\n\n")
+P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+t = x@P # I could put this in the line below but that would mean calculating this twice, it is faster to store it to memory and reuse it
+tsquared = np.array([ t[row, :] @ np.diag( S[:a]**-2 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
+print(f"tsquared = \n\n{tsquared}\n\n")
 
-# # Critical value
-# tsquared95 = (a*(num.measurements-1)/(num.measurements-a)) * f.ppf(1-alpha, a, num.measurements - a) 
-# tsquared95_normalised = tsquared95**-a
+# Critical value
+tsquared95 = (a*(num.measurements-1)/(num.measurements-a)) * f.ppf(1-alpha, a, num.measurements - a) 
+tsquared95_normalised = tsquared95**-a
 # print(tsquared95)
 
+tsquared_cont = [[np.sum([ max((t[row, component] / S[component])**2 - tsquared95**-a*0, 0) / t[row, component] * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)]
+# above is the same as below (more readable below)
 # tsquared_cont = np.zeros([num.measurements, num.variables])
 # for row in range(0, num.measurements):
 #     for variable in range(0, num.variables):
 #         for component in range(0, a):
 #             t_normalised = ( t[row, component] / S[component] )**2 # if the normalised T-squared value is less than the normalised critical value, then the contribution is zero
 #             tsquared_cont[row, variable] += t_normalised / t[row, component] * P[variable,component] * x[row,variable]
-# tsquared_bycont = np.sum(tsquared_cont, axis=1)
-# print(f"tsquared by contribution = \n\n{tsquared_bycont}\n\n")
+
+tsquared_bycont = np.sum(tsquared_cont, axis=1)
+print(f"tsquared by contribution = \n\n{tsquared_bycont}\n\n")
 
 
 ## Q statistic
@@ -71,19 +74,16 @@ num.variables = len(x[0]) # columns
 # Q = np.sum(e**2, axis=1)
 
 # below is the preferred method
-P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
-r = np.array([ x[row, :] @ (np.identity(num.variables) - P@P.T) for row in range(0, num.measurements) ]) # identical to e
-Q = np.array([r[row, :].T@r[row, :] for row in range(0, num.measurements)]) # strictly, like before, r.T changes nothing in terms of execution
-# print(f"Preferred method = \n\n{Q}\n\nManual version = \n\n{np.sum(e**2, axis=1)}\n\n")
-print(f"Preferred method = \n\n{Q}\n")
+# P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+# r = np.array([ x[row, :] @ (np.identity(num.variables) - P@P.T) for row in range(0, num.measurements) ]) # identical to e
+# Q = np.array([r[row, :].T@r[row, :] for row in range(0, num.measurements)]) # strictly, like before, r.T changes nothing in terms of execution
+# # print(f"Preferred method = \n\n{Q}\n\nManual version = \n\n{np.sum(e**2, axis=1)}\n\n")
+# print(f"Preferred method = \n\n{Q}\n")
 
-Q_cont = np.zeros([num.measurements, num.variables])
-for row in range(0, num.measurements):
-    for variable in range(0, num.variables):
-        for component in range(0, a):
-            Q_cont[row, variable] += r[row, component] * r[row, component]
-Q_bycont = np.sum(Q_cont, axis=1)
-print(f"Q by contribution = \n\n{Q_bycont}\n\n")
+# Q_cont = [[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)]
+
+# Q_bycont = np.sum(Q_cont, axis=1)
+# print(f"Q by contribution = \n\n{Q_bycont}\n\n")
 
 # Critical value
 # residual_eigenvals = S[a:]**2
