@@ -1,17 +1,19 @@
 # Test files
-test.py
+test.*
 
 # Matlab
 *.slxc
 *.asv
 slprj/
+*.r2025b
 
 # Simulation results
-*.json
 data/
 NOC/
-S/
-H/
+S1/
+H1/
+S0/
+H0/
 
 
 # Byte-compiled / optimized / DLL files

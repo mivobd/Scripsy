@@ -14,11 +14,12 @@ clc
 % simulink file. You can change everything of interest here. Having the
 % simulink file open to view the scopes as it runs might still be worth it.
 
+snapshot = "O2"
 file.folder = "H"; % where the data files are
 data.dt = NaN; % set the time difference manually (only needed if simulation time data not saved)
 
 %% Snapshot data
-data.results = readdictionary("S/run_1.json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+data.results = readdictionary("S/"+snapshot+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
 data.S.fault = string(char(cell2mat(data.results{"fault"})')); % saving the fault ID for the snapshot data
 
 data.measured_vars = string(cell2mat(data.results{"measurements"})'); % extracting the names of each measurement, while also handling funky datatype manipulations (dictionary entries are all 1x1 cell arrays to make the dictionary creation work, but the entry is another cell array of the data we want)
@@ -46,31 +47,23 @@ for ii = 1:data.num_vars
 end
 
 [data.scaled, data.mean, data.std] = normalize(data.set(data.num_ignore+1:end, :)); % scaling the data
-[data.S.coeff, data.S.score, ~, ~, data.explained] = pca(data.scaled); % performing PCA, saving convenient stats
+[data.S.coeff, data.S.score, ~, ~, data.explained] = pca(data.scaled, 'Economy', false, 'Centered', 'off'); % performing PCA, saving convenient stats
 
 % choosing the number of principle components based on how many are needed
 % to explain 95 % of the variance
 for ii = 1:numel(data.explained)
     if sum(data.explained(1:ii)) > 95
-        k = ii;
+        k_chosen = ii;
         break
     end
 end
-L = data.S.coeff(:, 1:k); % principal subspace of the snapshot
-PCA_coeff = data.S.coeff;
-
-% eigenvalue decomposition
-test.S.covar = 1./numel(data.scaled(1, :)).*data.scaled'*data.scaled;
-[test.S.V, test.S.D] = eig(test.S.covar);
-[latent, ind] = sort(diag(test.S.D), 'descend');
-covar_eigenvectors = test.S.V(:, ind);
-
+L = data.S.coeff(:, 1:k_chosen); % principal subspace of the snapshot
 %% Historical data
-jj = 1;
-while isfile(file.folder+"/run_"+jj+".json")
-    jj = jj + 1;
+file.number = 1;
+while isfile(file.folder+"/run_"+file.number+".json")
+    file.number = file.number + 1;
 end
-file.number = jj - 1; % the number of data files
+file.number = file.number - 1; % the number of data files
 
 % Initialising arrays to store the similarity factor and the fault ID
 data.S_PCA = zeros(1, file.number);
@@ -79,7 +72,6 @@ data.H.faults = strings(1,file.number);
 for jj = 1:file.number
     data.results = readdictionary(file.folder+"/run_"+jj+".json"); % results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     data.H.faults(jj) = string(char(cell2mat(data.results{"fault"})')); % saving the fault ID
-    
     data.set = zeros(data.num_points, data.num_vars); % initialising the matrix that will have all the data to perform PCA
     % putting all the simulation data into one matrix
     for ii = 1:data.num_vars
@@ -87,11 +79,11 @@ for jj = 1:file.number
     end
 
     [data.scaled] = normalize(data.set(data.num_ignore+1:end, :), 'center', data.mean, 'scale', data.std); % scaling the data
-    [data.H.coeff] = pca(data.scaled,'NumComponents', k); % performing PCA, saving convenient stats
-    M = data.H.coeff(:, 1:k);
-
+    [data.H.coeff] = pca(data.scaled, 'Economy', false, 'Centered', 'off'); % performing PCA, saving convenient stats
+    [U, S, vt] = svd(data.scaled, 'econ');
+    M = data.H.coeff(:, 1:k_chosen);
    
-    data.S_PCA(jj) = trace(L'*M*M'*L) ./ k;
+    data.S_PCA(jj) = trace(L'*M*M'*L) ./ k_chosen;
 end
 %% Similarity stats
 Np = sum(data.S_PCA > 0.965); % candidate pool size (number of data sets classified as similar)
@@ -104,4 +96,4 @@ n = N1 ./ NDB .* 100;
 nmax = min(Np./NDB, 1) .* 100;
 e = ( p + n ) ./ 2;
 
-table(Np, N1, N2, NDB, p, n, nmax, e)
+rows2vars(table(Np, N1, N2, NDB, p, n, nmax, e))
