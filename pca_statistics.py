@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 import numpy as np
 from scipy.stats import f, norm, binom
+import matplotlib.pyplot as plt
 import os
 os.system('cls')
 
@@ -46,14 +47,17 @@ num.variables = len(x[0]) # columns
 P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
 t = x@P # I could put this in the line below but that would mean calculating this twice, it is faster to store it to memory and reuse it
 tsquared = np.array([ t[row, :] @ np.diag( S[:a]**-2 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
-print(f"tsquared = \n\n{tsquared}\n\n")
+# print(f"tsquared = \n\n{tsquared}\n\n")
 
 # Critical value
 tsquared95 = (a*(num.measurements-1)/(num.measurements-a)) * f.ppf(1-alpha, a, num.measurements - a) 
 tsquared95_normalised = tsquared95**-a
 # print(tsquared95)
 
-tsquared_cont = [[np.sum([ max((t[row, component] / S[component])**2 - tsquared95**-a*0, 0) / t[row, component] * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)]
+tsquared_cont = np.sum([[np.sum([ max((t[row, component] / S[component])**2 - tsquared95**-a, 0) / t[row, component] * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
+
+# not summed versions to verify:
+# tsquared_cont = [[np.sum([ max((t[row, component] / S[component])**2 - tsquared95**-a*0, 0) / t[row, component] * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)]
 # above is the same as below (more readable below)
 # tsquared_cont = np.zeros([num.measurements, num.variables])
 # for row in range(0, num.measurements):
@@ -61,29 +65,33 @@ tsquared_cont = [[np.sum([ max((t[row, component] / S[component])**2 - tsquared9
 #         for component in range(0, a):
 #             t_normalised = ( t[row, component] / S[component] )**2 # if the normalised T-squared value is less than the normalised critical value, then the contribution is zero
 #             tsquared_cont[row, variable] += t_normalised / t[row, component] * P[variable,component] * x[row,variable]
+# tsquared_bycont = np.sum(tsquared_cont, axis=1)
+# print(f"tsquared by contribution = \n\n{tsquared_bycont}\n\n")
 
-tsquared_bycont = np.sum(tsquared_cont, axis=1)
-print(f"tsquared by contribution = \n\n{tsquared_bycont}\n\n")
+
+plt.bar(range(0, num.variables), tsquared_cont)
+plt.show()
 
 
 ## Q statistic
-# P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
-# t = x@P # shape(t) = (m, n), score matrix, the projection of the input matrix onto the principal subspace
-# xbar_scaled = t@P.T # shape(t) = (m, n), projection of the the score matrix back onto the original variable space
-# e = x - xbar_scaled # shape(t) = (m, n), residuals or error, inter alia
-# Q = np.sum(e**2, axis=1)
+P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+t = x@P # shape(t) = (m, n), score matrix, the projection of the input matrix onto the principal subspace
+xbar_scaled = t@P.T # shape(t) = (m, n), projection of the the score matrix back onto the original variable space
+e = x - xbar_scaled # shape(t) = (m, n), residuals or error, inter alia
+Q = np.sum(e**2, axis=1)
+print(f"Summing (x-x_bar)(x-x_bar) = \n\n{Q}\n")
 
 # below is the preferred method
-# P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
-# r = np.array([ x[row, :] @ (np.identity(num.variables) - P@P.T) for row in range(0, num.measurements) ]) # identical to e
-# Q = np.array([r[row, :].T@r[row, :] for row in range(0, num.measurements)]) # strictly, like before, r.T changes nothing in terms of execution
-# # print(f"Preferred method = \n\n{Q}\n\nManual version = \n\n{np.sum(e**2, axis=1)}\n\n")
-# print(f"Preferred method = \n\n{Q}\n")
+P = np.transpose(Vt[:a, :]) # shape(P) = (n, a), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+r = np.array([ x[row, :] @ (np.identity(num.variables) - P@P.T) for row in range(0, num.measurements) ]) # identical to e
+Q = np.array([r[row, :].T@r[row, :] for row in range(0, num.measurements)]) # strictly, like before, r.T changes nothing in terms of execution
+# print(f"Preferred method = \n\n{Q}\n\nManual version = \n\n{np.sum(e**2, axis=1)}\n\n")
+print(f"Preferred method = \n\n{Q}\n")
 
-# Q_cont = [[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)]
+Q_cont = np.sum([[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
 
-# Q_bycont = np.sum(Q_cont, axis=1)
-# print(f"Q by contribution = \n\n{Q_bycont}\n\n")
+plt.bar(range(0, num.variables), Q_cont)
+plt.show()
 
 # Critical value
 # residual_eigenvals = S[a:]**2
