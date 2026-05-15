@@ -139,12 +139,14 @@ for kk in range(0,num.files):
     # eigenvals = S[:a]**2 # eigenvalues
     # covar = eigenvals/(len(x)-1) # covariance matrix
     stats.tsquared_violations[kk] = np.sum([int(ii) for ii in [ t[row, :] @ np.diag( S[:a]**-2 ) @ t[row, :].T for row in range(0, num.measurements) ] > stats.tsquared95]) # Hotelling's T-squared statistic violations
-    stats.tsquared_cont[kk, :] = np.sum([[np.sum([ max((t[row, component] / S[component])**2 - stats.tsquared95**-a, 0) / t[row, component] * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
+    
+    stats.tsquared_cont[kk, :] = np.sum([[np.sum([ 0 if (t[row, component] / S[component])**2 < stats.tsquared95**-a else t[row, component] / S[component]**2 * P[variable,component] * x[row,variable] for component in range(0, a)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
 
     # Q statistic
     r = np.array([ x[row, :] @ (np.identity(num.variables) - P@P.T) for row in range(0, num.measurements) ]) # identical to e
     stats.Q_violations[kk] = np.sum([int(ii) for ii in np.array([r[row, :].T@r[row, :] for row in range(0, num.measurements)]) > stats.Q95]) # Q statistic violations
-    stats.Q_cont[kk, :] = np.sum([[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
+    # Q contributions not really meaningful
+    # stats.Q_cont[kk, :] = np.sum([[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
 
     # PCA similarity statistic
     M = P
