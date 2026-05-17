@@ -19,7 +19,3 @@ F_11,-34473.8,Pa
 F12,10,L / min
 S1,3,K
 S_1,-3,K
-O1,10,L / min
-O2,10,L / min
-O3,10,L / min
-O4,10,L / min
