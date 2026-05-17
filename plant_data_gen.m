@@ -35,8 +35,8 @@ model.control.h = 1; % boolean, true to close the level cascade control loop, fa
 model.contoller_parameters = 1; % boolean, true to use the retuned values, false to use the values from Wong
 
 % Noise settings
-model.noise.M = 1; % boolean, measurement white noise active or not 
-model.noise.AR = 1; % boolean, auto-regressive feed noise active or not
+noise.M.active = 1; % boolean, measurement white noise active or not 
+noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
 
 % Disturbance settings
 model.disturb = 1; % boolean, incur disturbances or not
@@ -47,8 +47,8 @@ D.force.mag = 5; % double, units as per fault ID (fault_details.txt contains all
 %% Initialization
 if runs.full == 1
     % ensuring noise is present
-    model.noise.M = 1;
-    model.noise.AR = 1;
+    noise.M.active = 1;
+    noise.AR.active = 1;
 
     % controller settings
     model.control_arrangement = 0;
@@ -143,13 +143,35 @@ model.autoreg = 0.8; % autoregression gain
     end
 
     % Measurement transmitter gains
-    Km_Q = 0.08; % mA min L^{-1}, for the outlet flow rate
+    Km_Q = 8/100; % mA min L^{-1}, for the outlet flow rate
     Km_Q_C = 8/15; % mA min L^{-1}, for the coolant flow rate
-    Km_T = 8./402.35; % mA K^{-1}, for the reactor temperature
-    Km_h = 4/3; % mA dm^{-1}, for the reactor level
+    Km_T = 8/402.35; % mA K^{-1}, for the reactor temperature
+    Km_h = 8/6; % mA dm^{-1}, for the reactor level
     % unfortunately no other measurement gains were listed in Wong's thesis
     % (the primary source of Johannesmeyer's values at the time of writing
     % this - [26/04/2026])
+    % update: I believe these gains represent 8mA signal at NOC
+
+    % Measurement noise variances (from Johannesmeyer)
+    noise.M.C_A = 5.56e-6; % mol L^{-1}
+    noise.M.T = 4.44e-1; % K
+    noise.M.T_C = 4.44e-1; % K
+    noise.M.h = 1.60e-2; % dm
+    noise.M.Q = 4.44e-1; % L min^{-1}
+    noise.M.Q_C = 1.00e-2; % L min^{-1}
+    noise.M.Q_F = 4.44e-1; % L min^{-1}
+    noise.M.C_AF = 5.56e-6; % mol L^{-1}
+    noise.M.T_F = 4.44e-1; % K
+    noise.M.T_CF = 4.44e-1; % K
+
+    % Autoregressive input noise variances (from Wong, not provided by
+    % Johannesmeyer)
+    noise.AR.Q_F = 0.817.^2; % L min^{-1}
+    noise.AR.C_AF = (5.77e-3).^2; % mol L^{-1}
+    noise.AR.T_F = 0.817.^2; % K
+    noise.AR.T_CF = 0.817.^2; % K
+    noise.AR.P_D = (3.98e3).^2; % Pa
+    noise.AR.P_CU = (3.35e3).^2; % Pa
 
 % Disturbances
 % Stored the specifics of each disturbance ID in a separate file to make
