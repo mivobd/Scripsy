@@ -17,10 +17,10 @@ clc
 
 % Are you generating a large data set (comparable, or the same, in size as
 % used by Johannesmeyer?
-runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
+runs.full = 0; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
 runs.NOC = 54; % integer, number of NOC windows
 runs.fault = 409; % integer, number of windows with faults
-runs.control = 0; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
+runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
 
 % Below (until next section) only applies if you are not generating a full
 % data set (settings below are overridden/ignored for full dataset

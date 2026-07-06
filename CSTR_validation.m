@@ -9,6 +9,8 @@ for ii = 1:numel(files)
     hold on
 end
 legend(files, "Location", "best")
+xlabel("Time (min)")
+ylabel("Reactor temperature (K)")
 ylim([375, 500])
 hold off
 
