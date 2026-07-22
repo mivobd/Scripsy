@@ -17,16 +17,29 @@ clc
 
 % Are you generating a large data set (comparable, or the same, in size as
 % used by Johannesmeyer?
-runs.full = 0; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
-runs.NOC = 54; % integer, number of NOC windows
-runs.fault = 409; % integer, number of windows with faults
+runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
+runs.NOC = 0;%54; % integer, number of NOC windows
+runs.fault = 0;%409; % integer, number of windows with faults
 runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
+
+runs.snapshot_type = "N"; % the operating condition to be used for training
+snapshot_length = 10; % ratio of snapshot length to historical window length
+simulation_time = 120; % how the data windows should be (excluding the training set)
+
+% Noise settings
+noise.M.active = 1; % boolean, measurement white noise active or not 
+noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
+
+
+
+
+
 
 % Below (until next section) only applies if you are not generating a full
 % data set (settings below are overridden/ignored for full dataset
 % generation)
 model.runs = 1; % integer, number of simulation runs to be conducted
-model.folder = "data"; % string, where results are going to be saved 
+model.folder = "Hdata"; % string, where results are going to be saved 
 
 % Controller settings
 model.control_arrangement = 0; % boolean, true for 1/TI, false for TI (implementation inside the Simulink controller block)
@@ -34,22 +47,14 @@ model.control.T = 1; % boolean, true to close the temperature cascade control lo
 model.control.h = 1; % boolean, true to close the level cascade control loop, false for no level cascade control
 model.contoller_parameters = 1; % boolean, true to use the retuned values, false to use the values from Wong
 
-% Noise settings
-noise.M.active = 1; % boolean, measurement white noise active or not 
-noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
-
 % Disturbance settings
-model.disturb = 1; % boolean, incur disturbances or not
-D.force.use = 1; % boolean, force a specific disturance (remember to switch on model.disturb)
+model.disturb = 0; % boolean, incur disturbances or not
+D.force.use = 0; % boolean, force a specific disturance (remember to switch on model.disturb)
 D.force.fault = "F6"; % string, fault ID, the fault you want to incur (refer to fault_details.txt)
 D.force.mag = 5; % double, units as per fault ID (fault_details.txt contains all relevant info)
 
 %% Initialization
 if runs.full == 1
-    % ensuring noise is present
-    noise.M.active = 1;
-    noise.AR.active = 1;
-
     % controller settings
     model.control_arrangement = 0;
     model.contoller_parameters = 1;
@@ -62,11 +67,8 @@ if runs.full == 1
     end
     
     % directory creation/check -> simulation results stored here
-    if ~isfolder("H"+runs.control)
-        mkdir("H"+runs.control)
-    end
-    if ~isfolder("S"+runs.control)
-        mkdir("S"+runs.control)
+    if ~isfolder("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active)
+        mkdir("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active)
     end
 else
     % directory creation/check -> simulation results stored here
@@ -76,8 +78,8 @@ else
 end
 
 % Model details
-model.dt = 5./60; % measurement interval
-model.time = 120; % min, how long the simulation will run for
+model.dt = 5./60; % min, measurement interval
+model.time = simulation_time; % min, how long the simulation will run for
 model.points = model.time ./ model.dt; % number of measurements recorded
 
 D.time = model.time - model.dt .* ( 1024 - 1 ); % min, when the disturbance is effected
@@ -265,7 +267,7 @@ SS.h = X(end, 4);
 %% Data Generation
 % Fault definitions
 if runs.full == true
-    runs.snapshot = numel(D.details(:,1)) + 1;
+    runs.snapshot = 1; %numel(D.details(:,1)) + 1;
     model.runs = runs.NOC + runs.fault + runs.snapshot;
 
     % Faults are considered
@@ -273,14 +275,15 @@ if runs.full == true
     D.mags = ones(model.runs, 1);
 
     D.fault(:) = "N";
-    D.fault(2:runs.snapshot) = D.details(:,1);
+    D.mags(1) = snapshot_length; % recording how much longer the snapshot is compared to the historical windows
+    % D.fault(2:runs.snapshot) = D.details(:,1);
 
-    for ii = 2:runs.snapshot
-        if ~ismember(D.fault(ii), ["F3", "F13"]) % these don't have a magnitude, so are treated differently
-            rng("shuffle");
-            D.mags(ii) = 0.75 .* double(D.details( D.details(:, 1) == D.fault(ii), 2));
-        end
-    end
+    % for ii = 2:runs.snapshot
+    %     if ~ismember(D.fault(ii), ["F3", "F13"]) % these don't have a magnitude, so are treated differently
+    %         rng("shuffle");
+    %         D.mags(ii) = 0.75 .* double(D.details( D.details(:, 1) == D.fault(ii), 2));
+    %     end
+    % end
 
     for ii = runs.snapshot+runs.NOC+1:model.runs
         % List of faults
@@ -328,6 +331,14 @@ for ii = 1:model.runs
         D.active = D.fault(ii); 
         D.val = D.mags(ii);
     end
+    
+    if runs.full == 1
+        if ii <= runs.snapshot
+            model.time = simulation_time * 10; % larger training set
+        else 
+            model.time = simulation_time;
+        end
+    end 
 
     output = sim("CSTR_Simulink.slx"); % execute simulation and save results object
 
@@ -340,17 +351,25 @@ for ii = 1:model.runs
     model.results("magnitude") = {D.val}; % the curly brackets ensure each dictionary entry is a 1x1 cell 
     model.results("fault time") = {D.time};
 
-    if runs.full == 1 && ii <= runs.snapshot
-        if isfile("S"+runs.control+"/"+D.active+".json")
-            delete("S"+runs.control+"/"+D.active+".json")
+    if runs.full == 1
+        if ii <= runs.snapshot
+            if isfile("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json")
+                delete("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json")
+            end
+            writedictionary(model.results, "H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json");
+        else
+            if isfile("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json")
+                delete("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json")
+            end
+            writedictionary(model.results, "H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json");
         end
-        writedictionary(model.results, "S"+runs.control+"/"+D.active+".json");
     else
-        if isfile("H"+runs.control+"/run_"+(ii-runs.snapshot)+".json")
-            delete("H"+runs.control+"/run_"+(ii-runs.snapshot)+".json")
+        if isfile(model.folder+"/run_"+ii+".json")
+            delete(model.folder+"/run_"+ii+".json")
         end
-        writedictionary(model.results, "H"+runs.control+"/run_"+(ii-runs.snapshot)+".json");
+        writedictionary(model.results, model.folder+"/run_"+ii+".json");
     end
+
 end
 warning(w); % removing the warning suppression since we no longer expect this warning to be thrown (therefore need to know about it, if it does happen)
 

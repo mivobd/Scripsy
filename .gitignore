@@ -8,12 +8,21 @@ slprj/
 *.r2025b
 
 # Simulation results
+Hdata/
 data/
 NOC/
 S1/
 H1/
 S0/
 H0/
+H_C0_AR0_M0/
+H_C0_AR0_M1/
+H_C0_AR1_M0/
+H_C0_AR1_M1/
+H_C1_AR1_M1/
+H_C1_AR1_M0/
+H_C1_AR0_M0/
+H_C1_AR0_M1/
 
 
 # Byte-compiled / optimized / DLL files

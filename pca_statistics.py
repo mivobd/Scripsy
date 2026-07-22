@@ -15,7 +15,7 @@ U,S,Vt = np.linalg.svd(x, full_matrices=False)
 # shape(U) = (m, n), unitary matrix of left singular vectors
 # shape(S) = (1, n), singular values
 # shape(Vt) = (n, n), unitary matrix of right singular vectors transposed
-k = 3
+k = 2
 num = SimpleNamespace()
 num.measurements = len(x) # rows
 num.variables = len(x[0]) # columns
@@ -71,15 +71,18 @@ stats.tsquared95 = (k*(num.measurements-1)/(num.measurements-k)) * f.ppf(1-alpha
 # # above is the same as below (more readable below)
 stats.tsquared = stats.tsquared*0
 stats.tsquared_contributions = np.zeros([num.variables])
-for variable in range(0, num.variables):
-    for row in range(0, num.measurements):
-        for component in range(0, k):
-            t_normalised = t[row, component]**2 / ( S[component]**2/(num.measurements-1) )
-            if t_normalised < stats.tsquared95**-k:
-                t_normalised = 0 # zero if not significant
-            contribution = t_normalised / t[row, component] * P[variable,component] * x[row,variable]
-            stats.tsquared[row] += contribution
-            stats.tsquared_contributions[variable] += contribution
+
+for kk in range(0,1):
+
+    for variable in range(0, num.variables):
+        for measurement in range(0, num.measurements):
+            for component in range(0, k):
+                t_normalised = t[measurement, component]**2 / ( S[component]**2/(num.measurements-1) )
+                if t_normalised < stats.tsquared95**-k:
+                    t_normalised = 0 # zero if not significant
+                contribution = t_normalised / t[measurement, component] * P[variable,component] * x[measurement,variable]
+                # stats.tsquared[measurement] += contribution
+                stats.tsquared_contributions[variable] += contribution
         
 # stats.tsquared = np.sum(stats.tsquared_contributions, axis=1)
 # print(f"tsquared by contribution = \n\n{stats.tsquared}\n\n")
@@ -121,4 +124,4 @@ print(f"Preferred method = \n\n{stats.Q}\n\nManual version = \n\n{np.sum(e**2, a
 ## Limit violations
 # stats.r95 = binom.ppf(1-alpha, 1024, alpha) # critical value for T-squared and Q statistic violations, with 1024 observations
 
-print(t@P.T+x_mean)
+# print(t@P.T+x_mean)
