@@ -95,5 +95,42 @@ for ii in range(0, num.variables):
 data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
 x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
 
-C = W@W.T + sigma2*np.eye(D)
+
+prob = SimpleNamespace()
+# np.random.multivariate_normal(mean, covar)
+
+I = np.identity(num.variables)
+# M = W.T@W + sigma^2*I
+
+# prob.z = np.random.multivariate_normal(0, I)
+# prob.x_given_z = np.random.multivariate_normal(W@z+mu, sigma^2@I)
+# prob.x = np.random.multivariate_normal(data.snapshot.mean, data.set[num.ignore:, :]-data.snapshot.mean)
+# prob.z_given_x = np.random.multivariate_normal(np.linalg.inv(M)@W.T@(x-mu),sigma^-2*M)
+
+# EM algorithm
+
+count = 0
+W = 0
+sigma2 = 0
+W_new = np.ones(num.variables)
+sigma2_new = 1
+
+x_mean = data.snapshot.mean
+
+while count < 100000 or ( max((W_new-W)^2) > 1e-3 and max((sigma2_new-sigma2)^2) > 1e-3 ):
+    # Updating parameters
+    W = W_new
+    sigma2 = sigma2_new
+    M = W.T@W + sigma2*I
+
+    # Expecation 
+    E_z = np.array([np.linalg.inv(M)@W.T@(x[measurement, :]-x_mean) for measurement in range(0, num.measurements)])
+    E_zzT = np.array([sigma2*np.linalg.inv(M) + E_z[measurement]*E_z[measurement].T for measurement in range(0, num.measurements)])
+
+    # Maximisation
+    W_new = np.sum([(x[measurement, :] - x_mean)*E_z[measurement].T for measurement in range(0, num.measurements)])*np.sum(E_zzT)**-1
+    sigma2_new = 1/(num.measurements*num.variables) * np.sum([np.linalg.norm(x[measurement, :]-x_mean)**2 - 2*E_z[measurement].T*W_new.T*(x[measurement, :]-x_mean) + np.trace(E_zzT[measurement]*W_new.T@W_new) for measurement in range(0, num.measurements)])
+
+
+# C = W@W.T + sigma2*np.eye(D)
 
