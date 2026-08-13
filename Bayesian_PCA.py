@@ -7,6 +7,7 @@ from scipy.stats import f, norm, binom
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
+import time
 os.system('cls')
 
 # Print iterations progress
@@ -33,7 +34,7 @@ def printProgressBar (iteration, total, prefix = 'Progress:', suffix = 'Complete
 
 def log_likelihood(x: np.ndarray, mu: np.ndarray, C: np.ndarray, S: np.ndarray, W: np.ndarray, sigma2: np.ndarray, N: int, D: int):
     M = W.T@W + sigma2*np.eye(D)
-    C_inv = np.sqrt(sigma2)^-1*np.eye(D) - sigma2**-1 @ W @ np.linalg.inv(M) @ W.T
+    C_inv = np.sqrt(sigma2)**-1*np.eye(D) - sigma2**-1 @ W @ np.linalg.inv(M) @ W.T
     return - N/2 * ( D*np.log(2*np.pi) + np.log(np.linalg.det(C)) + np.trace(C_inv @ S) )
 
 # def prob_x(mu: np.ndarray, S: np.ndarray, D: int):
@@ -93,10 +94,9 @@ for ii in range(0, num.variables):
 
 # PCA
 data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
+# x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
+x = data.set[num.ignore:, :].T
 
-
-prob = SimpleNamespace()
 # np.random.multivariate_normal(mean, covar)
 
 I = np.identity(num.variables)
@@ -107,30 +107,66 @@ I = np.identity(num.variables)
 # prob.x = np.random.multivariate_normal(data.snapshot.mean, data.set[num.ignore:, :]-data.snapshot.mean)
 # prob.z_given_x = np.random.multivariate_normal(np.linalg.inv(M)@W.T@(x-mu),sigma^-2*M)
 
-# EM algorithm
+D = num.variables
+N = num.measurements
+x_mean = data.snapshot.mean.reshape(-1, 1)
 
-count = 0
-W = 0
-sigma2 = 0
-W_new = np.ones(num.variables)
-sigma2_new = 1
+limit = 1000000
+search = 1
+for start in range(0, search):
+    # initialising
+    count = 0
+    hyper = 0
+    W = 0
+    sigma2 = 0
+    E_z = np.zeros([D, N])
+    E_zzT = np.zeros([D, D, N])
 
-x_mean = data.snapshot.mean
+    np.random.seed(int(time.time()))
+    hyper_new = np.random.rand(D).reshape(-1, 1)/np.random.rand()
+    W_new = np.random.rand(D, D)/np.random.rand()
+    sigma2_new = np.random.rand()/np.random.rand()
+    
+    W_diff = np.amax(np.abs((W_new-W)))**2
+    sigma2_diff = (sigma2_new-sigma2)**2
+    hyper_diff = np.amax((hyper_new-hyper)**2)
 
-while count < 100000 or ( max((W_new-W)^2) > 1e-3 and max((sigma2_new-sigma2)^2) > 1e-3 ):
-    # Updating parameters
-    W = W_new
-    sigma2 = sigma2_new
-    M = W.T@W + sigma2*I
-
-    # Expecation 
-    E_z = np.array([np.linalg.inv(M)@W.T@(x[measurement, :]-x_mean) for measurement in range(0, num.measurements)])
-    E_zzT = np.array([sigma2*np.linalg.inv(M) + E_z[measurement]*E_z[measurement].T for measurement in range(0, num.measurements)])
-
-    # Maximisation
-    W_new = np.sum([(x[measurement, :] - x_mean)*E_z[measurement].T for measurement in range(0, num.measurements)])*np.sum(E_zzT)**-1
-    sigma2_new = 1/(num.measurements*num.variables) * np.sum([np.linalg.norm(x[measurement, :]-x_mean)**2 - 2*E_z[measurement].T*W_new.T*(x[measurement, :]-x_mean) + np.trace(E_zzT[measurement]*W_new.T@W_new) for measurement in range(0, num.measurements)])
+    # EM algorithm
+    while count < limit and ( W_diff > 1e-3 or sigma2_diff > 1e-3 or hyper_diff > 1e-3 ):
+        # Updating parameters
+        W = W_new
+        sigma2 = sigma2_new
+        W_sum1 = 0
+        W_sum2 = 0
+        sigma2_sum = 0
+        M = W.T@W + sigma2*np.identity(D)
 
 
-# C = W@W.T + sigma2*np.eye(D)
+        # Expecation
+        for n in range(0, N):
+            E_z[:, n:n+1] = np.linalg.inv(M)@W.T@(x[:, n:n+1]-x_mean)
+            E_zzT[:, :, n] = sigma2*np.linalg.inv(M) + E_z[:, n:n+1]@E_z[:, n:n+1].T
 
+            W_sum1 += (x[:, n:n+1] - x_mean)*E_z[:, n:n+1].T
+            W_sum2 += E_zzT[:, :, n]
+
+
+        # Maximisation
+        for i in range(0, D):
+            hyper_new[i] = D/(W[i, :].T@W[i, :])
+        W_new = W_sum1@np.linalg.inv(W_sum2+sigma2*np.diag(hyper_new))
+
+        for n in range(0, N):
+            sigma2_sum += np.linalg.norm(x[:, n:n+1]-x_mean)**2 - 2*E_z[:, n:n+1].T@W_new.T@(x[:, n:n+1]-x_mean) + np.trace(E_zzT[:, :, n]@W_new.T@W_new)
+        sigma2_new = 1/(N*D) * sigma2_sum
+
+
+        W_diff = np.amax(np.abs((W_new-W)))**2
+        sigma2_diff = max((sigma2_new-sigma2)**2)
+        hyper_diff = np.amax((hyper_new-hyper)**2)
+        count += 1
+        printProgressBar(count, limit)
+
+    print(f"EM algorithm converged after {count} iterations")
+    print(f"Final W = {W_new}\n\nFinal sigma^2 = {sigma2_new}\n\nFinal hyperparameters = {hyper_new}")
+    print(f"Effective number of retained components = {np.sum(hyper_new**-1)}")

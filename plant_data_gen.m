@@ -18,13 +18,13 @@ clc
 % Are you generating a large data set (comparable, or the same, in size as
 % used by Johannesmeyer?
 runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
-runs.NOC = 0;%54; % integer, number of NOC windows
-runs.fault = 0;%409; % integer, number of windows with faults
+runs.NOC = 54; % integer, number of NOC windows
+runs.fault = 409; % integer, number of windows with faults
 runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
 
-runs.snapshot_type = "N"; % the operating condition to be used for training
-snapshot_length = 10; % ratio of snapshot length to historical window length
-simulation_time = 120; % how the data windows should be (excluding the training set)
+runs.snapshot_type = "N"; % string, the operating condition to be used for training
+snapshot_length = 1; % ~, ratio of snapshot length to historical window length
+simulation_time = 120; % min, how long the data windows should be (excluding the training set)
 
 % Noise settings
 noise.M.active = 1; % boolean, measurement white noise active or not 

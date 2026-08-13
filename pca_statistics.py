@@ -19,7 +19,7 @@ k = 4
 num = SimpleNamespace()
 num.measurements = len(x) # rows
 num.variables = len(x[0]) # columns
-
+print(np.shape(data))
 stats = SimpleNamespace()
 
 ## Basic PCA stats
