@@ -313,7 +313,7 @@ for d in [1, 3, 6]:
 
 x = x - np.mean(x, axis=1).reshape(-1, 1) # centering the data
 
-limit = 1000
+limit = 1
 best_log_likelihood = -1e10
 for iteration in range(0, limit):
     seconds = time.time()*1e4
@@ -325,7 +325,7 @@ for iteration in range(0, limit):
         best_log_likelihood = log_likelihood_value
         best_parameters = parameters
 
-    if parameters[3] == 1000:
+    if parameters[3] == 1e4:
         print("EM algorithm did not converge within the limit of iterations")
         break
 
