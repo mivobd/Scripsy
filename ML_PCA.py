@@ -7,10 +7,10 @@ from scipy.stats import f, norm, binom
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
-from time import perf_counter
+import time
 
 os.system('cls')
-timer_start = perf_counter()
+timer_start = time.perf_counter()
 # plt.ion()
 
 # Print iterations progress
@@ -63,7 +63,7 @@ operating_conditons = np.insert(operating_conditons, 0, "N")
 
 ## Snapshot data
 data.snapshot = SimpleNamespace() # dedicated to snapshot-related values
-with open(f"H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}/Snapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
+with open(f"H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
     data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
 data.snapshot.fault = ''.join(chr(ii) for ii in (int(jj) for jj in data.results["fault"]))
 data.measured_variables = data.results["measurements"]
@@ -93,15 +93,15 @@ x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling th
 U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
 
 V, explained = np.transpose(Vt), 100 * S**2 / (len(x)-1) / np.sum(S**2 / (len(x)-1)) # converting the SVD results into the PCA stats
-
+print(V)
 # choosing the number of principle components based on how many are needed
 # to explain 95 % of the variance
 
-# cum_explained = [np.sum(explained[:ii]) for ii in range(0, num.variables)]
-# for ii in range(0, num.variables):
-#     if cum_explained[ii] > 95:
-#         k = ii
-#         break
+cum_explained = [np.sum(explained[:ii]) for ii in range(0, num.variables)]
+for ii in range(0, num.variables):
+    if cum_explained[ii] > 95:
+        k = ii
+        break
 k = 9
 
 # plt.figure(1)       
@@ -144,7 +144,6 @@ stats.S_pca = np.zeros(num.files)
 
 data.H = SimpleNamespace()
 data.H.faults = np.empty(num.files, dtype=np.dtype('U5'))
-printProgressBar(0, num.files)
 # colours = ['#e6194B', '#f58231', '#ffe119', '#bfef45', '#3cb44b', '#42d4f4', '#4363d8', '#911eb4', '#f032e6', '#a9a9a9']
 colours = ["#008080", "#A52A2A", "#FFD700", "#40E0D0", "#ADD8E6", "#000080", "#90EE90", "#006400", "#FFCCCB", "#8B0000", "#E6E6FA", "#4B0082", "#FFDAB9", "#D2691E", "#FFB6C1", "#C71585", "#D3D3D3", "#4A4A4A", "#000000", "#FFA500", "#8B8000"]
 num.colours = len(colours)
@@ -320,7 +319,7 @@ ax[1, 1].set_xlabel("PC 1")
 ax[1, 1].set_ylabel("PC 3")
 
 
-print(f"\n\nExecution time: {perf_counter() - timer_start} seconds")
+print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
 
 plt.show()
 # input("Press Enter to continue...")

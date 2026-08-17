@@ -15,11 +15,12 @@ U,S,Vt = np.linalg.svd(x, full_matrices=False)
 # shape(U) = (m, n), unitary matrix of left singular vectors
 # shape(S) = (1, n), singular values
 # shape(Vt) = (n, n), unitary matrix of right singular vectors transposed
+print(np.shape(Vt))
 k = 4
 num = SimpleNamespace()
 num.measurements = len(x) # rows
 num.variables = len(x[0]) # columns
-print(np.shape(data))
+
 stats = SimpleNamespace()
 
 ## Basic PCA stats
