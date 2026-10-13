@@ -15,8 +15,8 @@ U,S,Vt = np.linalg.svd(x, full_matrices=False)
 # shape(U) = (m, n), unitary matrix of left singular vectors
 # shape(S) = (1, n), singular values
 # shape(Vt) = (n, n), unitary matrix of right singular vectors transposed
-print(np.shape(Vt))
-k = 4
+# print(np.shape(Vt))
+k = 3
 num = SimpleNamespace()
 num.measurements = len(x) # rows
 num.variables = len(x[0]) # columns
@@ -49,15 +49,17 @@ stats = SimpleNamespace()
 
 W = np.transpose(Vt[:k, :]) # shape(W) = (n, k), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
 t = x@W # I could put this in the line below but that would mean calculating this twice, it is faster to store it to memory and reuse it
-covariance = S[:k]**2/(num.measurements-1) # covariance matrix
-stats.tsquared = np.array([ t[row, :] @ np.diag( covariance**-1 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
-print(f"tsquared = \n\n{stats.tsquared}\n\n")
+print(np.shape(W))
+# print(np.shape(W))
 
-U,S,Vt = np.linalg.svd(x/(num.measurements-1)**0.5, full_matrices=False)
-W = np.transpose(Vt[:k, :])
-t = x@W
-stats.tsquared = np.array([ t[row, :] @ np.diag( S[:k]**-2 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
-print(f"tsquared = \n\n{stats.tsquared}\n\n")
+covariance = S[:k]**2/(num.measurements-1) # covariance matrix
+print(covariance)
+# stats.tsquared = np.array([ t[row, :] @ np.diag( covariance**-1 ) @ t[row, :].T for row in range(0, num.measurements) ]) # strictly, t.T does nothing here because of how numpy defaults to handling 1D arrays
+stats.tsquared = np.zeros(num.measurements)
+for row in range(0, num.measurements):
+    stats.tsquared[row] = t[row, :] @ np.diag( covariance**-1 ) @ t[row, :].T
+
+# print(f"tsquared = \n\n{stats.tsquared}\n\n")
 
 # Critical value
 stats.tsquared95 = (k*(num.measurements-1)/(num.measurements-k)) * f.ppf(1-alpha, k, num.measurements - k) 
@@ -70,23 +72,42 @@ stats.tsquared95 = (k*(num.measurements-1)/(num.measurements-k)) * f.ppf(1-alpha
 # # not summed versions to verify:
 # stats.tsquared_contributions = [[np.sum([ max((t[row, component] / S[component])**2 - stats.tsquared95**-k*0, 0) / t[row, component] * W[variable,component] * x[row,variable] for component in range(0, k)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)]
 # # above is the same as below (more readable below)
-stats.tsquared = stats.tsquared*0
+stats.tsquared = np.zeros(num.measurements)
 stats.tsquared_contributions = np.zeros([num.variables])
 
 for kk in range(0,1):
+    # print(np.shape(t[0, :]))
+    # print(np.shape(np.linalg.inv(np.diag(covariance))))
+    # print(np.shape(W[0,:]))
 
     for variable in range(0, num.variables):
         for measurement in range(0, num.measurements):
-            for component in range(0, k):
-                t_normalised = t[measurement, component]**2 / ( S[component]**2/(num.measurements-1) )
-                if t_normalised < stats.tsquared95**-k:
-                    t_normalised = 0 # zero if not significant
-                contribution = t_normalised / t[measurement, component] * W[variable,component] * x[measurement,variable]
-                # stats.tsquared[measurement] += contribution
-                stats.tsquared_contributions[variable] += contribution
+            # for component in range(0, k):
+            #     t_normalised = t[measurement, component]**2 / ( S[component]**2/(num.measurements-1) )
+            #     if t_normalised < stats.tsquared95**-k:
+            #         t_normalised = 0 # zero if not significant
+            #     contribution = t_normalised / t[measurement, component] * W[variable,component] * x[measurement,variable]
+            contribution = t[measurement, :] @ np.linalg.inv(np.diag(covariance)) @ W[variable,:] * x[measurement,variable]
+            stats.tsquared[measurement] += contribution
+            stats.tsquared_contributions[variable] += contribution
         
 # stats.tsquared = np.sum(stats.tsquared_contributions, axis=1)
-# print(f"tsquared by contribution = \n\n{stats.tsquared}\n\n")
+print(f"tsquared by contribution = \n\n{stats.tsquared}\n\n")
+print(f"tsquared variable contributions = \n\n{stats.tsquared_contributions}\n\n")
+
+stats.tsquared = np.zeros(num.measurements)
+stats.tsquared_contributions1 = np.zeros([num.variables])
+for kk in range(0,1):
+    for variable in range(0, num.variables):
+        for measurement in range(0, num.measurements):
+            contribution = t[measurement, :] @ np.linalg.inv(np.diag(covariance)) @ t[measurement, :] / num.variables
+            stats.tsquared[measurement] += contribution
+            stats.tsquared_contributions1[variable] += contribution
+        
+# stats.tsquared = np.sum(stats.tsquared_contributions, axis=1)
+print(f"tsquared by contribution = \n\n{stats.tsquared}\n\n")
+print(f"tsquared variable contributions = \n\n{stats.tsquared_contributions1}\n\n")
+
 # print(stats.tsquared_contributions)
 # print(stats.tsquared)
 
@@ -99,15 +120,7 @@ W = np.transpose(Vt[:k, :]) # shape(W) = (n, k), principal subspace, the number 
 t = x@W # shape(t) = (m, n), score matrix, the projection of the input matrix onto the principal subspace
 xbar_scaled = t@W.T # shape(t) = (m, n), projection of the the score matrix back onto the original variable space
 e = x - xbar_scaled # shape(t) = (m, n), residuals or error, inter alia
-# stats.Q = np.sum(e**2, axis=1)
-# print(f"Summing (x-x_bar)(x-x_bar) = \n\n{stats.Q}\n")
-
-# below is the preferred method
-W = np.transpose(Vt[:k, :]) # shape(W) = (n, k), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
-r = np.array([ x[row, :] @ (np.identity(num.variables) - W@W.T) for row in range(0, num.measurements) ]) # identical to e
-stats.Q = np.array([r[row, :]@r[row, :].T for row in range(0, num.measurements)]) # strictly, like before, r.T changes nothing in terms of execution
-print(f"Preferred method = \n\n{stats.Q}\n\nManual version = \n\n{np.sum(e**2, axis=1)}\n\n")
-# print(f"Preferred method = \n\n{stats.Q}\n")
+stats.Q = np.sum(e**2, axis=1)
 
 # Q contributions not really meaningful but here they are anyway
 # stats.Q_cont = np.sum([[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
@@ -134,4 +147,4 @@ U,S,Vt = np.linalg.svd(x, full_matrices=False)
 k=4
 W = np.transpose(Vt[:k, :])
 t = x@W
-print(W@t.T+x_mean)
+# print(W@t.T+x_mean)

@@ -2,6 +2,7 @@
 clearvars
 close all
 clc
+tic
 
 % Be forewarned, I made this code my own. This means my comments are not
 % strictly professional. They are still informative and should get the
@@ -20,7 +21,7 @@ clc
 runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
 runs.NOC = 54; % integer, number of NOC windows
 runs.fault = 409; % integer, number of windows with faults
-runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
+runs.control = 0; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
 
 runs.snapshot_type = "N"; % string, the operating condition to be used for training
 snapshot_length = 1; % ~, ratio of snapshot length to historical window length
@@ -28,7 +29,7 @@ simulation_time = 120; % min, how long the data windows should be (excluding the
 
 % Noise settings
 noise.M.active = 1; % boolean, measurement white noise active or not 
-noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
+noise.AR.active = 0; % boolean, auto-regressive feed noise active or not
 
 
 
@@ -54,6 +55,7 @@ D.force.fault = "F6"; % string, fault ID, the fault you want to incur (refer to 
 D.force.mag = 5; % double, units as per fault ID (fault_details.txt contains all relevant info)
 
 %% Initialization
+folder_name = "results/H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active;
 if runs.full == 1
     % controller settings
     model.control_arrangement = 0;
@@ -67,8 +69,12 @@ if runs.full == 1
     end
     
     % directory creation/check -> simulation results stored here
-    if ~isfolder("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active)
-        mkdir("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active)
+    if ~isfolder("results")
+        mkdir("results")
+    end
+
+    if ~isfolder(folder_name)
+        mkdir(folder_name)
     end
 else
     % directory creation/check -> simulation results stored here
@@ -353,15 +359,15 @@ for ii = 1:model.runs
 
     if runs.full == 1
         if ii <= runs.snapshot
-            if isfile("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json")
-                delete("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json")
+            if isfile(folder_name+"/OldSnapshot_"+D.active+".json")
+                delete(folder_name+"/OldSnapshot_"+D.active+".json")
             end
-            writedictionary(model.results, "H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/BigSnapshot_"+D.active+".json");
+            writedictionary(model.results, folder_name+"/OldSnapshot_"+D.active+".json");
         else
-            if isfile("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json")
-                delete("H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json")
+            if isfile(folder_name+"/run_"+(ii-runs.snapshot)+".json")
+                delete(folder_name+"/run_"+(ii-runs.snapshot)+".json")
             end
-            writedictionary(model.results, "H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active+"/run_"+(ii-runs.snapshot)+".json");
+            writedictionary(model.results, folder_name+"/run_"+(ii-runs.snapshot)+".json");
         end
     else
         if isfile(model.folder+"/run_"+ii+".json")
@@ -374,4 +380,4 @@ end
 warning(w); % removing the warning suppression since we no longer expect this warning to be thrown (therefore need to know about it, if it does happen)
 
 %%
-clc
+timeElapsed = toc

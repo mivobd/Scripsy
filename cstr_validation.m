@@ -8,7 +8,7 @@ for ii = 1:numel(files)
     plot(data.t, data.X, 'linestyle', '-')%, 'color', '#FFFFFF')
     hold on
 end
-legend(files, "Location", "best")
+legend(["Nominal Value", "+ 90 %", "+ 50 %", "+ 10 %", "- 90 %", "- 50 %", "- 10 %"], "Location", "best")
 xlabel("Time (min)")
 ylabel("Reactor temperature (K)")
 ylim([375, 500])
