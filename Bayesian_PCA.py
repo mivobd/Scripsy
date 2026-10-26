@@ -80,7 +80,7 @@ def hinton(matrix, ax=None):
 
 
 
-def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
+def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
     """
     next to try using
     linalg.solve(B.T, A.T).T
@@ -114,7 +114,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
 
     while count < limit and ( max(W_diff, alphas_diff, beta_diff) > diff ):
         last_start = time.perf_counter()
-        # printProgressBar(count, limit, suffix = f"Complete ({file})")
+        printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed       ", length = 50)
         W = W_new.copy()
         beta = beta_new
         alphas = alphas_new.copy()
@@ -135,9 +135,9 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
 
         alphas_new = D / np.sum(W_new*W_new, axis=0)
 
-        print("alpha:", alphas_new)
-        print("1 / alpha:", 1 / alphas_new)
-        print("||w_i||^2:", np.sum(W_new*W_new, axis=0))
+        # print("alpha:", alphas_new)
+        # print("1 / alpha:", 1 / alphas_new)
+        # print("||w_i||^2:", np.sum(W_new*W_new, axis=0))
 
         # Convergence checks
         # temp = W_new-W
@@ -161,17 +161,18 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
             / max(abs(beta_new), abs(beta), 1.0)
         )
 
-        A_diff = (
-            np.linalg.norm(alphas_new - alphas)
-            / max(np.linalg.norm(alphas), 1.0)
+        mask = np.isfinite(alphas_new) & np.isfinite(alphas)
+        alphas_diff = (
+            np.linalg.norm(alphas_new[mask] - alphas[mask])
+            / max(np.linalg.norm(alphas[mask]), 1.0)
         )
 
-        print(
-            f"\ncount={count}, "
-            f"W_diff={W_diff}, "
-            f"beta_diff={beta_diff}, "
-            f"A_diff={A_diff}"
-        )
+        # print(
+        #     f"count={count}, "
+        #     f"W_diff={W_diff}, "
+        #     f"beta_diff={beta_diff}, "
+        #     f"alphas_diff={alphas_diff}"
+        # )
 
         count += 1
 
@@ -241,7 +242,7 @@ def global_search(x, M, limit, save_state = False, file = ""):
         best_parameters = state.best_parameters
 
     for iteration in range(0 + state.iteration, limit):
-        printProgressBar(iteration, limit, suffix = f"Complete ({file})")
+        # printProgressBar(iteration, limit, suffix = f"Complete ({file})")
         completion = f"{file} [{(iteration+1)/limit*100} % overall]"
         parameters = em(x, M, state.seed[iteration], file = completion)
         state.log_likelihood_value[iteration] = log_likelihood(x, parameters)
@@ -291,7 +292,7 @@ if __name__ == '__main__':
 
     data = SimpleNamespace()
     data.dt = None # set the time difference manually (only needed if simulation time data not saved)
-    snapshot_BPCA = False
+    snapshot_BPCA = True
 
     """
     Normal code execution below
@@ -335,6 +336,7 @@ if __name__ == '__main__':
     M = 13
     data.snapshot.mean = np.mean(data.set, axis=0)
     x = (data.set-data.snapshot.mean).T # scaling the data 
+    print(np.shape(x))
 
     if snapshot_BPCA == True:
         with ProcessPoolExecutor() as executor:
@@ -450,21 +452,21 @@ if __name__ == '__main__':
     x = W_true @ Z + noise
     x -= np.mean(x, axis=1, keepdims=True)
 
-    limit = 100
+    limit = 1
     M = 9
 
-    with ProcessPoolExecutor() as executor:
-        global_search(x, M, limit)
-    shutil.copy2(f"save_state.json", f"test_results.json")
-
-    results = SimpleNamespace()
-    with open(f"test_results.json", 'r', encoding='utf-8') as file:
-        results.Snapshot = SimpleNamespace(**json.load(file))
-
+    # with ProcessPoolExecutor() as executor:
+    #     global_search(x, M, limit)
+    # shutil.copy2(f"save_state.json", f"test_results.json")
 
     # results = SimpleNamespace()
-    # with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
+    # with open(f"test_results.json", 'r', encoding='utf-8') as file:
     #     results.Snapshot = SimpleNamespace(**json.load(file))
+
+
+    results = SimpleNamespace()
+    with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
+        results.Snapshot = SimpleNamespace(**json.load(file))
 
     # with ProcessPoolExecutor() as executor:
     #     W_unordered, beta, alphas, count, seed = em(x, M)
