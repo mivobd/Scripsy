@@ -194,7 +194,7 @@ snapshot = "N" # set the operating condition of the snapshot.   "N" for NOC and 
 control = 1 # boolean, control (1) or no control (0) for the snapshot
 autoreggressive_noise = 0
 measurement_noise = 1
-alpha = 0.05 # confidence level for the similarity checks
+lim = 0.05 # confidence level for the similarity checks
 
 """
 Normal code execution below
@@ -225,34 +225,39 @@ data.set = np.zeros([num.recorded_points, num.variables]) # initialising the mat
 # putting all the simulation data into one matrix
 for ii in range(0, num.variables):
     data.set[:, ii] = data.results[data.measured_variables[ii]]
-data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
+# data.snapshot.mean = np.mean(data.set[num.ignore:, :], axis=0)
+# x = (data.set[num.ignore:, :] - data.snapshot.mean) # scaling the data
+data.snapshot.mean = np.mean(data.set, axis=0)
+x = (data.set-data.snapshot.mean) # scaling the data
+
 # U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
 # ordered_indices = np.argsort(S) # ordering the singular values from largest to smallest
 # Vt = Vt[ordered_indices[::-1], :] # ordering the right singular vectors to match the ordered singular values
 
 # BPCA results
 results = SimpleNamespace()
-folder_path = f"BPCA_H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}"
+folder_path = f"BPCA_H_C{control}_AR1_M{measurement_noise}"
 with open(f"{folder_path}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
         results.Snapshot = SimpleNamespace(**json.load(file)) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
 # ppca = em(x, M, results.Snapshot["best_parameters"][4], False)
 
 W_unordered = np.array(results.Snapshot.best_parameters[0])
-alphas = 1/np.array(results.Snapshot.best_parameters[2])
+alphas = np.array(results.Snapshot.best_parameters[2])
 num.OGweights = len(alphas)
 num.variables = np.shape(W_unordered)[0]
-ordered_indices = np.argsort(alphas[:, 0])
+ordered_indices = np.argsort(1/alphas)
 W = W_unordered[:, ordered_indices[::-1]]
 alphas_ordered = alphas[ordered_indices[::-1]]
-sigma2 = results.Snapshot.best_parameters[1][0][0]
+beta = results.Snapshot.best_parameters[1]
+print(1/beta)
+# beta = 1/beta
 
-cum_explained = [np.sum(alphas_ordered[:ii+1]) for ii in range(0, num.OGweights)]/np.sum(alphas_ordered)
+cum_explained = [np.sum(np.diag(alphas_ordered[:ii+1])) for ii in range(0, num.OGweights)]/np.sum(np.diag(alphas_ordered))
 for ii in range(0, num.OGweights):
     if cum_explained[ii] > 0.95:
         k = ii+1
         break
-# print(num.OGweights, k)
+print(num.OGweights, k)
 retained = np.zeros((num.variables, num.OGweights))
 for ii in range(0, k):
     retained[:, ii] = W[:, ii].reshape(14)
@@ -260,18 +265,18 @@ for ii in range(0, k):
 I_K = np.identity(k)
 I_D = np.identity(num.variables)
 
-# # visualising the selection of retained number of principal components
-# weight_nums = np.linspace(1, num.OGweights, num.OGweights)
-# plt.plot(weight_nums, cum_explained, label = "Cumulative Relative Inverse \u03B1")
-# plt.plot([0, num.OGweights], [0.95, 0.95], 'r--', label = "95% threshold")
-# plt.plot([k, k], [0, 1], 'g--', label = f"Chosen k = {k}")
-# plt.ylabel("Cumulative Value")
-# plt.xlabel("Number of \u03B1's")
-# plt.ylim([0, 1])
-# plt.xlim([0, num.OGweights])
-# plt.xticks(np.arange(0, num.OGweights+1, 1))
-# plt.legend()
-# plt.show()
+# visualising the selection of retained number of principal components
+weight_nums = np.linspace(1, num.OGweights, num.OGweights)
+plt.plot(weight_nums, cum_explained, label = "Cumulative Relative Inverse \u03B1")
+plt.plot([0, num.OGweights], [0.95, 0.95], 'r--', label = "95% threshold")
+plt.plot([k, k], [0, 1], 'g--', label = f"Chosen k = {k}")
+plt.ylabel("Cumulative Value")
+plt.xlabel("Number of \u03B1's")
+plt.ylim([0, 1])
+plt.xlim([0, num.OGweights])
+plt.xticks(np.arange(0, num.OGweights+1, 1))
+plt.legend()
+plt.show()
 
 # # comparing original BPCA results to ordered and retained components
 # fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(10, 5))
@@ -299,10 +304,11 @@ I_D = np.identity(num.variables)
 # plt.show()
 
 # PCA stats for the chosen principal components
-beta = 1/sigma2
 x = x.T
-P = retained # principal subspace
-t = P.T@np.linalg.inv(P@P.T + beta**-1*I_D)@x # score matrix for BPCA
+P = W[:, :k] # principal subspace
+M = P.T@P + I_K/beta
+S_var_tx_inv = beta*M
+t = P.T@np.linalg.inv(P@P.T + I_D/beta)@x # score matrix for BPCA
 e = x - P@t # shape(t) = (m, n), residuals or error, inter alia
 stats.Q_tr = np.sum(e**2, axis=1)
 stats.meanQ_tr = np.mean(stats.Q_tr)
@@ -311,18 +317,19 @@ g = stats.varQ_tr/(2*stats.meanQ_tr)
 h = stats.meanQ_tr/g
 
 # Similarity checks
-stats.tsquared95 = chi2.ppf(1-alpha, k) # Bayesian PCA version of 95 % confidence limit for Hotelling's T-squared 
-stats.Q95 = g*chi2.ppf(1-alpha, h) # Bayesian PCA version of 95 % confidence limit for the Q statistic
-stats.r95 = binom.ppf(1-alpha, 1024, alpha) # hardcoding the number of expected measurements... surely this will not bite me in the ass later...
+L = P
+stats.tsquared95 = chi2.ppf(1-lim, k) # Bayesian PCA version of 95 % confidence limit for Hotelling's T-squared 
+stats.Q95 = g*chi2.ppf(1-lim, h) # Bayesian PCA version of 95 % confidence limit for the Q statistic
+stats.r95 = binom.ppf(1-lim, 1024, lim) # hardcoding the number of expected measurements... surely this will not bite me in the ass later...
 stats.S_pcaBest = 0.965 # Johannesmeyer provided best value
 
 # historical data
 files = [f.name for f in Path(folder_path).iterdir() if f.is_file()]
 files.remove(f"OldSnapshot_{snapshot}.json")
-num.files = len(files)
+num.files = 62#len(files)
 
 # Initialising arrays 
-start = 462
+start = 61
 stats.tsquared_violations = np.zeros(num.files)
 stats.tsquared_contributions = np.zeros([num.files, num.variables])
 stats.Q_violations = np.zeros(num.files)
@@ -344,8 +351,8 @@ for kk in range(start, num.files):
     if kk == start:
         # print(np.shape(data.results["t"]))
         num.recorded_points = len(data.results["t"])
-        num.measurements = len(data.results["t"]) - num.ignore
-        # num.measurements = len(data.results["t"]) 
+        # num.measurements = len(data.results["t"]) - num.ignore
+        num.measurements = len(data.results["t"]) 
 
         stats.tsquared = np.zeros([num.files, num.measurements])
         stats.Q = np.zeros([num.files, num.measurements])
@@ -355,13 +362,12 @@ for kk in range(start, num.files):
     for ii in range(0,num.variables):
         data.set[:, ii] = data.results[data.measured_variables[ii]]
                                                                                                              
-    x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
-    x = x.T
-    # x = (data.set-data.snapshot.mean)/data.snapshot.std # scaling the data
+    # x = (data.set[num.ignore:, :]-data.snapshot.mean).T # scaling the data
+    x = (data.set-data.snapshot.mean).T
 
     # BPCA results
-    # with open(f"{folder_path}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
-    with open(f"{folder_path}/sigma2_test_463.json", 'r', encoding='utf-8') as file:
+    with open(f"BPCA_H_C{control}_AR1_M{measurement_noise}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
+    # with open(f"{folder_path}/sigma2_test_463.json", 'r', encoding='utf-8') as file:
         results.H = SimpleNamespace(**json.load(file)) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     W_unordered = np.array(results.H.best_parameters[0])
     alphas = 1/np.array(results.H.best_parameters[2])
@@ -369,58 +375,46 @@ for kk in range(start, num.files):
     num.variables = np.shape(W_unordered)[0]
     ordered_indices = np.argsort(alphas[:, 0])
     W = W_unordered[:, ordered_indices[::-1]]
-    sigma2 = results.H.best_parameters[1][0][0]
+    beta_new = results.H.best_parameters[1][0][0]
 
     # tsquared
     P = W[:, :k] # principal subspace
-    t = P.T@np.linalg.inv(P@P.T + sigma2*I_D)@x # score matrix
-    # print(np.shape(P.T@np.linalg.inv(P@P.T + sigma2*I_D)))
+    t = L.T@np.linalg.inv(L@L.T + I_D/beta)@x # score matrix
+    # print(np.shape(t))
 
     # # cov_tx = P.T
     # # cov_xt = P
-    # var_x = P@P.T + sigma2*I_D
+    # var_x = P@P.T + I_D/beta
     # # var_t = I
     # var_tx = I_K - P.T@var_x**-1@P
-    # sigma2 = 9.881715530751868e-06
-    # sigma2 = 2
-    # print(sigma2)
-    M = P.T@P + sigma2*I_K
-    var_tx_inv = 1/sigma2*M
-    print(sigma2)
-    print(1/sigma2)
+    M = L.T@L + I_K/beta
+    var_tx_inv = beta*M
+    # print(beta)
+    # print(1/beta)
 
     for column in range(0, num.measurements):
-        stats.tsquared[kk, column] = (t[:, column].reshape(-1, 1).T @ var_tx_inv @ t[:, column])[0]
+        stats.tsquared[kk, column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
     # print(stats.tsquared[kk, :])
-    # print(stats.tsquared95)
 
     # stats.tsquared = np.zeros([num.files, num.measurements])
     for variable in range(0, num.variables):
         for measurement in range(0, num.measurements):
-            # print(np.shape(np.linalg.inv(P@P.T + sigma2*I_D)))
-            # print(np.shape((P.T @ np.linalg.inv(P@P.T + sigma2*I_D))[:, variable]))
-            # print(np.shape(var_tx))
-            # print(np.shape(t[:, measurement]))
-            # contribution = (t[:, measurement] @ var_tx @ ((P.T @ np.linalg.inv(P@P.T + sigma2*I_D))[variable, :]).T * x[variable, measurement])[0]
-            contribution = (P.T @ np.linalg.inv( P @ P.T + sigma2*I_D )).T[variable,:] @ var_tx_inv @ t[:, measurement] * x[variable, measurement]
+            contribution = (L.T @ np.linalg.inv( L @ L.T + I_D/beta )).T[variable,:] @ S_var_tx_inv @ t[:, measurement] * x[variable, measurement]
             stats.tsquared_contributions[kk, variable] += contribution
             # stats.tsquared[kk, measurement] += contribution
-    # print(stats.tsquared[kk, :])
-    # print(stats.tsquared_contributions[kk, :])
+    # print(stats.tsquared[kk, :]) # prove that T-squared contributions sum to T-squared statistic
 
     for tsquared in stats.tsquared[kk]:
         stats.tsquared_violations[kk] += tsquared > stats.tsquared95
-
-    # stats.tsquared = np.sum(stats.tsquared_contributions, axis=0)
     
     # Q statistic
-    e = x - P@t # shape(t) = (m, n), residuals or error, inter alia
+    e = x - L@t # shape(t) = (m, n), residuals or error, inter alia
     stats.Q[kk, :] = np.sum(e**2, axis=0)
     for Q in stats.Q[kk, :]:
         stats.Q_violations[kk] += Q > stats.Q95
     
-    # # PCA similarity statistic
-    # stats.S_pca[kk] = np.trace(L.T@P@P.T@L) / k  
+    # PCA similarity statistic
+    stats.S_pca[kk] = np.trace(L.T@P@P.T@L) / k  
 
     fault_index = np.where(operating_conditons == stats.H_faults[kk])[0][0]
 
@@ -440,7 +434,7 @@ for kk in range(start, num.files):
     ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
     ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
     ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-    # ax2[1].plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
+    ax2[1].plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
     ax2[1].set_xlabel("Observation")
     ax2[1].set_ylabel("Hotelling's T-squared statistic")
     ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")

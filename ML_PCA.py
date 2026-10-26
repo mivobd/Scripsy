@@ -51,7 +51,7 @@ snapshot = "N" # set the operating condition of the snapshot.   "N" for NOC and 
 control = 1 # boolean, control (1) or no control (0) for the snapshot
 autoreggressive_noise = 0
 measurement_noise = 1
-alpha = 0.05 # confidence level for the similarity checks
+alpha = 0.01 # confidence level for the similarity checks
 
 data = SimpleNamespace()
 data.dt = None; # set the time difference manually (only needed if simulation time data not saved)
@@ -90,11 +90,11 @@ for ii in range(0, num.variables):
     data.set[:, ii] = data.results[data.measured_variables[ii]]
 
 # PCA
-data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
+data.snapshot.mean, data.snapshot.std = np.mean(data.set, axis=0), np.std(data.set, axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
+x = (data.set-data.snapshot.mean)/data.snapshot.std # scaling the data
 U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
-
-V, explained = np.transpose(Vt), 100 * S**2 / (len(x)-1) / np.sum(S**2 / (len(x)-1)) # converting the SVD results into the PCA stats
+S_covar = S**2 / (num.measurements-1)
+V, explained = np.transpose(Vt), 100 * S_covar / np.sum(S_covar) # converting the SVD results into the PCA stats
 # choosing the number of principle components based on how many are needed
 # to explain 95 % of the variance
 
@@ -103,7 +103,8 @@ for ii in range(0, num.variables):
     if cum_explained[ii] > 95:
         k = ii + 1
         break
-
+# k = num.variables
+print(k)
 # plt.figure(1)       
 # plt.plot(np.linspace(1, num.variables, num.variables), cum_explained, color = 'k', linestyle = '-', label = "Cumulative explained variance")
 # plt.plot([1, num.variables], [95, 95], color = 'r', linestyle = '--', label = "95% variance explained")
@@ -121,10 +122,31 @@ theta = [np.sum(residual_eigenvals**ii) for ii in range(1, 4)] # theta values
 h0 = 1 - (2 * theta[0] * theta[2]) / (3 * theta[1]**2) # h0 value
 
 # Similarity checks
-stats.tsquared95 = ( k * (len(x) - 1) / (len(x) - k) ) * f.ppf(1 - alpha, k, len(x) - k) # 95 % confidence limit for Hotelling's T-squared
+planned_num_measurements = 1024
+stats.tsquared95 = ( k * (planned_num_measurements - 1) / (planned_num_measurements - k) ) * f.ppf(1 - alpha, k, planned_num_measurements - k) # 95 % confidence limit for Hotelling's T-squared
 stats.Q95 = theta[0] * ( norm.ppf(1-alpha) * h0 * np.sqrt( 2*theta[1] )/theta[0] + 1 + theta[1]*h0*(h0-1)/theta[0]**2 ) / h0 # 95 % confidence limit for the Q statistic
-stats.r95 = binom.ppf(1-alpha, 1024, alpha) # hardcoding the number of expected measurements... surely this will not bite me in the ass later...
+stats.r95 = binom.ppf(1-alpha, planned_num_measurements, alpha) # hardcoding the number of expected measurements... surely this will not bite me in the ass later...
 stats.S_pcaBest = 0.965 # Johannesmeyer provided best value
+
+covariance = S[:k]**2/(num.measurements-1) # covariance matrix
+
+tsquared = np.zeros(num.measurements)
+t = x@L
+for row in range(0, num.measurements):
+    tsquared[row] = t[row, :] @ np.diag( covariance**-1 ) @ t[row, :].T
+
+# fig, ax = plt.subplots(1, 1)
+# ax.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+# ax.plot(np.linspace(1, num.measurements, num.measurements), tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+# # ax2[1].plot([num.ignore, num.ignore], [0, 30], color = 'r', linestyle = '-', label = "Fault occurrence")
+# ax.set_xlabel("Observation")
+# ax.set_ylabel("Hotelling's T-squared statistic")
+# ax.set_title(f"Hotelling's T-squared statistic for snapshot")
+# ax.legend(loc = 'upper left')
+# fig.show()
+# input("Press Enter to continue...")
+# ax.cla()
+
 
 ## Historical data
 start = 0
@@ -162,9 +184,9 @@ for kk in range(start, num.files):
     if kk == start:
         num.recorded_points = len(data.results["t"])
         num.measurements = len(data.results["t"]) - num.ignore
+        # num.measurements = len(data.results["t"])
         stats.tsquared = np.zeros([num.files, num.measurements])
         stats.Q = np.zeros([num.files, num.measurements])
-        # num.measurements = len(data.results["t"])
          
         # y_med = np.median(explained)
         # print(f"y_med = {y_med}")
@@ -199,21 +221,25 @@ for kk in range(start, num.files):
     # PCA                                                                                                               
     x = (data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std # scaling the data
     # x = (data.set[:, :]-data.snapshot.mean)/data.snapshot.std
-    U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
-    P = np.transpose(Vt[:k, :]) # shape(P) = (n, k), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+    U, Snew, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
+    M = np.transpose(Vt[:k, :]) # shape(P) = (D, k), principal subspace, the number of rows of Vt corresponding to the chosen number of principal components
+    # print(np.shape(x))
     
     # tsquared
+    P = L
     t = x@P # score matrix
     # use of eigenvalues deprecated for the time being (since covar is not being used for the tsquared)
     # eigenvals = S[:k]**2 # eigenvalues
-    covariance = S[:k]**2/(num.measurements-1) # covariance matrix
+
+    # P = M
+    # S_covar = Snew**2/(num.measurements-1) # covariance matrix
     
     for row in range(0, num.measurements):
-        stats.tsquared[kk, row] = t[row, :] @ np.diag( covariance**-1 ) @ t[row, :].T
+        stats.tsquared[kk, row] = t[row, :] @ np.diag( S_covar[:k]**-1 ) @ t[row, :].T
 
     for variable in range(0, num.variables):
         for measurement in range(0, num.measurements):
-            contribution = t[measurement, :] @ np.diag( covariance**-1 ) @ P[variable, :] * x[measurement,variable]
+            contribution = t[measurement, :] @ np.diag( S_covar[:k]**-1 ) @ P[variable, :] * x[measurement,variable]
             stats.tsquared_contributions[kk, variable] += contribution
             # stats.tsquared[kk, measurement] += contribution
 
@@ -223,8 +249,8 @@ for kk in range(start, num.files):
     # stats.tsquared_contributions[kk, :] = np.sum([[np.sum([ 0 if (t[row, component] / S[component])**2 < stats.tsquared95**-k else t[row, component] / S[component]**2 * P[variable,component] * x[row,variable] for component in range(0, k)], axis = 0) for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
 
     # Q statistic
-    xbar_scaled = t@P.T # shape(t) = (m, n), projection of the the score matrix back onto the original variable space
-    e = x - xbar_scaled # shape(t) = (m, n), residuals or error, inter alia
+    xbar_scaled = t@P.T # shape(t) = (n, m), projection of the the score matrix back onto the original variable space
+    e = x - xbar_scaled # shape(t) = (n, m), residuals or error, inter alia
     stats.Q[kk, :] = np.sum(e**2, axis=1)
     for Q in stats.Q[kk, :]:
         stats.Q_violations[kk] += Q > stats.Q95
@@ -232,7 +258,7 @@ for kk in range(start, num.files):
     # stats.Q_cont[kk, :] = np.sum([[r[row, variable] * r[row, variable] for variable in range(0, num.variables)] for row in range(0, num.measurements)], axis=0)
 
     # PCA similarity statistic
-    M = P
+    # M = P
     stats.S_pca[kk] = np.trace(L.T@M@M.T@L) / k  
 
     fault_index = np.where(operating_conditons == stats.H_faults[kk])[0][0]
@@ -253,7 +279,7 @@ for kk in range(start, num.files):
     # ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
     # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
     # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-    # # ax2[1].plot([num.ignore, num.ignore], [0, 30], color = 'r', linestyle = '-', label = "Fault occurrence")
+    # ax2[1].plot([num.ignore, num.ignore], [0, 30], color = 'r', linestyle = '-', label = "Fault occurrence")
     # ax2[1].set_xlabel("Observation")
     # ax2[1].set_ylabel("Hotelling's T-squared statistic")
     # ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")
@@ -286,8 +312,8 @@ for index, item in enumerate(stats.__dict__.values()):
         save[names[index]] = item.tolist() 
     else:
         save[names[index]] = item
-with open("results/PCA(cum_explained).json", "w") as json_file:
-    json.dump(save, json_file)
+# with open("results/PCA(cum_explained).json", "w") as json_file:
+#     json.dump(save, json_file)
 # with open("results/PCA(OHT).json", "w") as json_file:
 #     json.dump(save, json_file)
 
