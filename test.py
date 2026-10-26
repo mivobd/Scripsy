@@ -16,10 +16,10 @@ from pathlib import Path
 subprocess.run('cls', shell=True)
 timer_start = time.perf_counter()
 
-control = 1 # boolean, control (1) or no control (0) for the snapshot
-autoreggressive_noise = 1
-measurement_noise = 1
-folder_path = f"BPCA_H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}"
-shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_N.json")
+test = np.array([[1, 0, 1], [0, 1, 1], [1, 1, 1]])
+I_test = np.identity(3)
+print(np.linalg.inv(test))
+# print(la.cho_solve(la.cho_factor(test, lower=True), I_test))
+print(np.linalg.solve(test, I_test))
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
