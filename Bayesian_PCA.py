@@ -101,9 +101,9 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
     # beta_new = 1
     beta_diff = (beta_new-beta)**2
 
-    A = 0
-    A_new = np.ones([M])
-    A_diff = np.sum((A_new-A)**2)
+    alphas = 0
+    alphas_new = np.ones([M])
+    alphas_diff = np.sum((alphas_new-alphas)**2)
 
     M_matrix = 0
     M_inv = 0
@@ -112,12 +112,12 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
 
     total_time = 0
 
-    while count < limit and ( max(W_diff, A_diff, beta_diff) > diff ):
+    while count < limit and ( max(W_diff, alphas_diff, beta_diff) > diff ):
         last_start = time.perf_counter()
         # printProgressBar(count, limit, suffix = f"Complete ({file})")
         W = W_new.copy()
         beta = beta_new
-        A = A_new.copy()
+        alphas = alphas_new.copy()
 
         # M_matrix += W.T @ W + I_M/beta
         M_matrix = W.T@W + I_M/beta
@@ -129,23 +129,50 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
         sum_E_zzT = N * M_inv / beta + E_z @ E_z.T
 
         # Maximisation
-        W_new = np.linalg.solve( sum_E_zzT + ads * np.diag(A/beta).T, (x @ E_z.T).T).T
+        W_new = np.linalg.solve( sum_E_zzT + ads * np.diag(alphas/beta).T, (x @ E_z.T).T).T
 
         beta_new = N*D / ( np.trace(x.T @ x) - 2 * np.trace(E_z.T @ W_new.T @ x) + np.trace(W_new.T @ W_new @ sum_E_zzT) )
 
-        A_new = D / np.sum(W_new*W_new, axis=0)
+        alphas_new = D / np.sum(W_new*W_new, axis=0)
+
+        print("alpha:", alphas_new)
+        print("1 / alpha:", 1 / alphas_new)
+        print("||w_i||^2:", np.sum(W_new*W_new, axis=0))
 
         # Convergence checks
-        temp = W_new-W
-        W_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
-        W_diff *= W_diff
-        # print(W_diff)
-        beta_diff = np.abs(beta_new-beta)/min(beta_new, beta)
-        # print(beta_diff)
-        temp = A_new-A
-        A_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
-        A_diff *= A_diff
-        # print(A_diff)
+        # temp = W_new-W
+        # W_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
+        # W_diff *= W_diff
+        # # print(W_diff)
+        # beta_diff = np.abs(beta_new-beta)/min(beta_new, beta)
+        # # print(beta_diff)
+        # temp = alphas_new-alphas
+        # alphas_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
+        # alphas_diff *= alphas_diff
+        # # print(A_diff)
+
+        W_diff = (
+            np.linalg.norm(W_new - W)
+            / max(np.linalg.norm(W), 1.0)
+        )
+
+        beta_diff = (
+            abs(beta_new - beta)
+            / max(abs(beta_new), abs(beta), 1.0)
+        )
+
+        A_diff = (
+            np.linalg.norm(alphas_new - alphas)
+            / max(np.linalg.norm(alphas), 1.0)
+        )
+
+        print(
+            f"\ncount={count}, "
+            f"W_diff={W_diff}, "
+            f"beta_diff={beta_diff}, "
+            f"A_diff={A_diff}"
+        )
+
         count += 1
 
         recent_time = time.perf_counter() - last_start
@@ -153,7 +180,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-2, file = ""):
         print(f"\rIteration {count} time: {recent_time} s (average {total_time/count} s)", end = "\r")
 
     # subprocess.run('cls', shell=True)
-    return [W_new, beta_new, A_new, count, seed]
+    return [W_new, beta_new, alphas_new, count, seed]
 
 
 
@@ -402,17 +429,28 @@ if __name__ == '__main__':
 
 
 
-    x = np.zeros([10, 300])
-    np.random.seed(1)
+    # x = np.zeros([10, 300])
+    # np.random.seed(1)
 
-    for d in range(0, 10):
-        x[d, :] = np.random.normal(loc = 0, scale = 0.5, size = 300)
-    for d in [1, 3, 6]:
-        x[d, :] = np.random.normal(loc = 0, scale = 1, size = 300)
+    # for d in range(0, 10):
+    #     x[d, :] = np.random.normal(loc = 0, scale = 0.5, size = 300)
+    # for d in [1, 3, 6]:
+    #     x[d, :] = np.random.normal(loc = 0, scale = 1, size = 300)
 
-    x = x - np.mean(x, axis=1).reshape(-1, 1) # centering the data
+    # x = x - np.mean(x, axis=1).reshape(-1, 1) # centering the data
 
-    limit = 1
+    D = 10
+    N = 300
+    true_M = 3
+
+    Z = np.random.normal(size=(true_M, N))
+    W_true = np.random.normal(size=(D, true_M))
+    noise = 0.25 * np.random.normal(size=(D, N))
+
+    x = W_true @ Z + noise
+    x -= np.mean(x, axis=1, keepdims=True)
+
+    limit = 100
     M = 9
 
     with ProcessPoolExecutor() as executor:
@@ -428,12 +466,13 @@ if __name__ == '__main__':
     # with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
     #     results.Snapshot = SimpleNamespace(**json.load(file))
 
+    # with ProcessPoolExecutor() as executor:
+    #     W_unordered, beta, alphas, count, seed = em(x, M)
+
     W_unordered = np.array(results.Snapshot.best_parameters[0])
-    print(np.shape(W_unordered))
     alphas = np.array(results.Snapshot.best_parameters[2])
     ordered_indices = np.argsort(1/alphas.reshape(-1))
     W = W_unordered[:, ordered_indices[::-1]]
-    print(np.shape(W))
     alphas_ordered = alphas[ordered_indices[::-1]]
     beta = results.Snapshot.best_parameters[1]
 
