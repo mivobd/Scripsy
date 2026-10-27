@@ -12,6 +12,9 @@ import pandas as pd
 import time
 import shutil
 from pathlib import Path
+if not hasattr(np, "float128"):
+    np.float128 = np.longdouble
+from pyppca import ppca
 
 subprocess.run('cls', shell=True)
 timer_start = time.perf_counter()
@@ -283,6 +286,57 @@ num.measurements = N
 with open("test_x.json", "r") as json_file:
     x = np.array(json.load(json_file))
 
+W, sigma2, M, temp, Ye = ppca(x.T, true_M, 0)
+print(np.shape(W))
+beta = 1/sigma2
+print(beta)
+
+# results = SimpleNamespace()
+# with open(f"test_results.json", 'r', encoding='utf-8') as file:
+#     results.Snapshot = SimpleNamespace(**json.load(file))
+
+# W_unordered = np.array(results.Snapshot.best_parameters[0])
+# alphas = np.array(results.Snapshot.best_parameters[2])
+# ordered_indices = np.argsort(1/alphas.reshape(-1))
+# W = W_unordered[:, ordered_indices[::-1]]
+# alphas_ordered = alphas[ordered_indices[::-1]]
+# beta = results.Snapshot.best_parameters[1]
+
+I_K = np.identity(k)
+I_D = np.identity(num.variables)
+
+# x = x.T
+P = W[:, :k] # principal subspace
+M = P.T @ P + I_K / beta
+S_var_tx_inv = beta*M
+t = P.T @ np.linalg.solve( P @ P.T + I_D / beta, x ) # score matrix for BPCA
+stats.tsquared95 = chi2.ppf(1-lim, k) # Bayesian PCA version of 95 % confidence limit for Hotelling's T-squared 
+
+# print("W_unordered:", W_unordered.shape)
+# print("alphas:", alphas.shape)
+# print("ordered_indices:", ordered_indices.shape)
+# print("W:", W.shape)
+# print("P:", P.shape)
+# print("rank(P):", np.linalg.matrix_rank(P))
+# print("cond(P.T @ P + I_K / beta):",
+#       np.linalg.cond(P.T @ P + I_K / beta))
+
+stats.tsquared = np.zeros([num.measurements])
+for column in range(0, num.measurements):
+    stats.tsquared[column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
+
+fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
+ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+# ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
+ax2.set_xlabel("Observation")
+ax2.set_ylabel("Hotelling's T-squared statistic")
+ax2.legend(loc = 'upper left')
+fig2.show()
+# print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
+input("Press Enter to continue...")
+ax2.cla()
+
 results = SimpleNamespace()
 with open(f"test_results.json", 'r', encoding='utf-8') as file:
     results.Snapshot = SimpleNamespace(**json.load(file))
@@ -290,9 +344,11 @@ with open(f"test_results.json", 'r', encoding='utf-8') as file:
 W_unordered = np.array(results.Snapshot.best_parameters[0])
 alphas = np.array(results.Snapshot.best_parameters[2])
 ordered_indices = np.argsort(1/alphas.reshape(-1))
+print(np.shape(W))
 W = W_unordered[:, ordered_indices[::-1]]
 alphas_ordered = alphas[ordered_indices[::-1]]
 beta = results.Snapshot.best_parameters[1]
+print(beta)
 
 I_K = np.identity(k)
 I_D = np.identity(num.variables)
