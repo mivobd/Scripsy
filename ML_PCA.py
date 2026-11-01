@@ -51,7 +51,7 @@ snapshot = "N" # set the operating condition of the snapshot.   "N" for NOC and 
 control = 1 # boolean, control (1) or no control (0) for the snapshot
 autoreggressive_noise = 0
 measurement_noise = 1
-alpha = 0.01 # confidence level for the similarity checks
+alpha = 0.05 # confidence level for the similarity checks
 
 data = SimpleNamespace()
 data.dt = None; # set the time difference manually (only needed if simulation time data not saved)
@@ -95,25 +95,45 @@ x = (data.set-data.snapshot.mean)/data.snapshot.std # scaling the data
 U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
 S_covar = S**2 / (num.measurements-1)
 V, explained = np.transpose(Vt), 100 * S_covar / np.sum(S_covar) # converting the SVD results into the PCA stats
-# choosing the number of principle components based on how many are needed
-# to explain 95 % of the variance
 
+# choosing the number of principle components based on how many are needed to explain 95 % of the variance
 cum_explained = [np.sum(explained[:ii]) for ii in range(0, num.variables)]
 for ii in range(0, num.variables):
     if cum_explained[ii] > 95:
         k = ii + 1
         break
-# k = num.variables
-print(k)
+selection_type = "cum_explained"
+plt.figure(1)       
+plt.plot(np.linspace(1, num.variables, num.variables), cum_explained, color = 'k', linestyle = '-', label = "Cumulative explained variance")
+plt.plot([1, num.variables], [95, 95], color = 'r', linestyle = '--', label = "95% variance explained")
+plt.plot([k, k], [0, 100], color = 'b', linestyle = '--', label = f"Retained PCs = {k}")
+plt.xlabel("Number of principal components")
+plt.xticks(np.linspace(0, num.variables, num.variables+1))
+plt.ylabel("Cumulative explained variance (%)")
+plt.legend()
+
+# # choosing the PCs retained using an optimal hard threshold
+# y_med = np.median(S)
+# print(f"y_med = {y_med}")
+# print(f"m={num.variables}")
+# print(f"n={num.measurements}")
+# # use the code supplement to calculate the coefficient, omega, using the above m x n matrix size
+# omega = 1.416496421203151
+# opt_hard_thres = omega*y_med
+# print(f"opt_hard_thres = {opt_hard_thres}")
+# for ii in range(0, num.variables):
+#     if S[ii] < opt_hard_thres:
+#         k = ii
+#         break
+# selection_type = "OHT"
 # plt.figure(1)       
-# plt.plot(np.linspace(1, num.variables, num.variables), cum_explained, color = 'k', linestyle = '-', label = "Cumulative explained variance")
-# plt.plot([1, num.variables], [95, 95], color = 'r', linestyle = '--', label = "95% variance explained")
-# plt.plot([k, k], [0, 100], color = 'b', linestyle = '--', label = f"Retained PCs = {k}")
-# plt.xlabel("Number of principal components")
+# plt.plot(np.linspace(1, num.variables, num.variables), S, color = 'k', linestyle = '-', label = "Singular values")
+# plt.plot([1, num.variables], [opt_hard_thres, opt_hard_thres], color = 'r', linestyle = '--', label = "Optimal hard threshold")
+# plt.plot([k, k], [0, np.max(S)], color = 'b', linestyle = '--', label = f"Retained PCs = {k}")
+# plt.xlabel("Corresponding principal components")
 # plt.xticks(np.linspace(0, num.variables, num.variables+1))
-# plt.ylabel("Cumulative explained variance (%)")
+# plt.ylabel("Singular values")
 # plt.legend()
-# plt.show(block=True)
 
 # PCA stats for the chosen principal components
 L = V[:, :k] # principal subspace of the snapshot
@@ -155,8 +175,8 @@ while os.path.exists(f"H_C{control}_AR{autoreggressive_noise}_M{measurement_nois
     num.files = num.files + 1
 num.files = num.files - 1 # the number of data files
 
-start = 0
-# num.files = 120
+# start = 61
+# num.files = 62
 # Initialising arrays 
 stats.tsquared_violations = np.zeros(num.files)
 stats.tsquared_contributions = np.zeros([num.files, num.variables])
@@ -171,7 +191,23 @@ stats.H_faults = np.empty(num.files, dtype=np.dtype('U5'))
 colours = ["#008080", "#A52A2A", "#FFD700", "#40E0D0", "#ADD8E6", "#000080", "#90EE90", "#006400", "#FFCCCB", "#8B0000", "#E6E6FA", "#4B0082", "#FFDAB9", "#D2691E", "#FFB6C1", "#C71585", "#D3D3D3", "#4A4A4A", "#000000", "#FFA500", "#8B8000"]
 num.colours = len(colours)
 markers = [".", "o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "p", "8", "*", "h", "H", "+", "x", "X", "D", "d", "|", "_"]
-# fig, ax = plt.subplots(2, 2)
+# fig, ax = plt.subplots(1, 3)
+
+# plt.figure(2) # PC 1 versus 2
+# plt.axes(projection='3d')
+fault_index = 0
+# ax[0].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
+# # plt.figure(3) # PC 2 versus 3
+# ax[1].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
+# # plt.figure(4) # PC 1 versus 3
+# ax[2].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
+# fig = plt.figure()
+# ax = fig.add_subplot(projection='3d')
+# ax.scatter(t[:, 0], t[:, 1], t[:, 2],  marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
 
 for kk in range(start, num.files):
     # fig2, ax2 = plt.subplots(2, 1) # for T-squared contributions and T-squared statistic
@@ -187,30 +223,7 @@ for kk in range(start, num.files):
         # num.measurements = len(data.results["t"])
         stats.tsquared = np.zeros([num.files, num.measurements])
         stats.Q = np.zeros([num.files, num.measurements])
-         
-        # y_med = np.median(explained)
-        # print(f"y_med = {y_med}")
-        # print(f"m={num.variables}")
-        # print(f"n={num.measurements}")
-        # # use the code supplement to calculate the coefficient, omega, using the above m x n matrix size
-        # omega = 1.445137406658669
-        # opt_hard_thres = omega*y_med
-        # print(f"opt_hard_thres = {opt_hard_thres}")
 
-        # for ii in range(0, num.variables):
-        #     if explained[ii] < opt_hard_thres:
-        #         k = ii
-        #         break
-
-        # plt.figure(1)       
-        # plt.plot(np.linspace(1, num.variables, num.variables), explained, color = 'k', linestyle = '-', label = "Singular values")
-        # plt.plot([1, num.variables], [opt_hard_thres, opt_hard_thres], color = 'r', linestyle = '--', label = "Optimal hard threshold")
-        # plt.plot([k, k], [0, 100], color = 'b', linestyle = '--', label = f"Retained PCs = {k}")
-        # plt.xlabel("Number of principal components")
-        # plt.xticks(np.linspace(0, num.variables, num.variables+1))
-        # plt.ylabel("Explained variance (%)")
-        # plt.legend()
-        # plt.show(block=True)
         
 
     data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
@@ -263,18 +276,17 @@ for kk in range(start, num.files):
 
     fault_index = np.where(operating_conditons == stats.H_faults[kk])[0][0]
 
-    # # plt.figure(1) # tsquared contributions
-    # ax[0, 0].plot(data.measured_variables, stats.tsquared_contributions[kk, :], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
-
     # # plt.figure(2) # PC 1 versus 2
     # # plt.axes(projection='3d')
-    # ax[0, 1].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+    # ax[0].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
     # # plt.figure(3) # PC 2 versus 3
-    # ax[1, 0].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+    # ax[1].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
     # # plt.figure(4) # PC 1 versus 3
-    # ax[1, 1].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+    # ax[2].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+
+    # ax.scatter(t[:, 0], t[:, 1], t[:, 2], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
     # ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
     # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
@@ -312,16 +324,16 @@ for index, item in enumerate(stats.__dict__.values()):
         save[names[index]] = item.tolist() 
     else:
         save[names[index]] = item
-# with open("results/PCA(cum_explained).json", "w") as json_file:
+# with open(f"results/PCA(cum_explained)_H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}_{int(100*(1-alpha))}alpha.json", "w") as json_file:
 #     json.dump(save, json_file)
-# with open("results/PCA(OHT).json", "w") as json_file:
-#     json.dump(save, json_file)
+with open(f"results/PCA({selection_type})_H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}_{int(100*(1-alpha))}alpha.json", "w") as json_file:
+    json.dump(save, json_file)
 
 
 ## Similarity stats
 # A priori labelling for evaluating performance, not available for use
 matches = stats.H_faults == stats.snapshot_fault
-print(f"matches = {matches}")
+# print(f"matches = {matches}")
 not_matches = [int(ii) for ii in ~matches.astype(bool)]
 
 # Quantifying performance
@@ -388,6 +400,6 @@ legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditon
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
 
-# plt.show()
+plt.show()
 # input("Press Enter to continue...")
 

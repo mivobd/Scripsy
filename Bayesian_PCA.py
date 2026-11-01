@@ -114,14 +114,12 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
     while count < limit and ( max(W_diff, alphas_diff, beta_diff) > diff ):
         last_start = time.perf_counter()
-        printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed       ", length = 50)
+        printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed {file}       ", length = 40)
         W = W_new.copy()
         beta = beta_new
         alphas = alphas_new.copy()
 
-        # M_matrix += W.T @ W + I_M/beta
         M_matrix = W.T@W + I_M/beta
-        # M_inv = la.cho_solve(la.cho_factor(M_matrix, lower=True), I_M)
         M_inv = np.linalg.solve(M_matrix, I_M)
 
         # Expectation
@@ -134,22 +132,6 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
         beta_new = N*D / ( np.trace(x.T @ x) - 2 * np.trace(E_z.T @ W_new.T @ x) + np.trace(W_new.T @ W_new @ sum_E_zzT) )
 
         alphas_new = D / np.sum(W_new*W_new, axis=0)
-
-        # print("alpha:", alphas_new)
-        # print("1 / alpha:", 1 / alphas_new)
-        # print("||w_i||^2:", np.sum(W_new*W_new, axis=0))
-
-        # Convergence checks
-        # temp = W_new-W
-        # W_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
-        # W_diff *= W_diff
-        # # print(W_diff)
-        # beta_diff = np.abs(beta_new-beta)/min(beta_new, beta)
-        # # print(beta_diff)
-        # temp = alphas_new-alphas
-        # alphas_diff = np.where(-temp.min() > temp.max(), temp.min(), temp.max())
-        # alphas_diff *= alphas_diff
-        # # print(A_diff)
 
         W_diff = (
             np.linalg.norm(W_new - W)
@@ -178,12 +160,94 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
         recent_time = time.perf_counter() - last_start
         total_time += recent_time
-        print(f"\rIteration {count} time: {recent_time} s (average {total_time/count} s)", end = "\r")
 
     # subprocess.run('cls', shell=True)
+    print(f"\rAverage {total_time/count} s per iteration over {count} iterations )", end = "\r")
     return [W_new, beta_new, alphas_new, count, seed]
 
+# slow, more readable, version below
+# def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
+#     """
+#     next to try using
+#     linalg.solve(B.T, A.T).T
+#     to find A@inv(B) instead of using cholesky
+#     """
+#     count = 0
+#     D, N = np.shape(x)
+#     total_time = 0
+#     # np.random.seed(seed)
 
+#     W = 0
+#     W_new = np.random.rand(D,M)/10
+#     # W_new = np.ones([D,M])
+#     W_diff = np.sum((W_new-W)**2)
+
+#     beta = 0
+#     beta_new = (np.random.rand()/np.random.rand())*100
+#     # beta_new = 1
+#     beta_diff = (beta_new-beta)**2
+
+#     alphas = 0
+#     alphas_new = np.ones([M])
+#     alphas_diff = np.sum((alphas_new-alphas)**2)
+
+#     while count < limit and ( max(W_diff, beta_diff, alphas_diff) > diff ):
+#         last_start = time.perf_counter()
+#         printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed       ", length = 50)
+#         W = W_new.copy()
+#         beta = beta_new
+#         alphas = alphas_new.copy()
+
+#         I_M = np.identity(M)
+#         M_matrix = W.T @ W + I_M/beta
+#         M_inv = np.linalg.solve(M_matrix.T, I_M.T).T
+
+#         W_sum1 = 0
+#         W_sum2 = 0
+#         for n in range(0, N):
+#             E_z = M_inv @ W.T @ x[:, n:n+1]
+#             E_zzT = M_inv/beta + E_z @ E_z.T
+
+#             W_sum1 += x[:, n:n+1] @ E_z.T
+#             W_sum2 += E_zzT
+#         W_new = np.linalg.solve((W_sum2 + np.diag(alphas)/beta).T, W_sum1.T).T
+
+#         beta_sum1 = 0
+#         beta_sum2 = 0
+#         beta_sum3 = 0
+#         for n in range(0, N):
+#             E_z = M_inv @ W.T @ x[:, n:n+1]
+#             E_zzT = M_inv/beta + E_z @ E_z.T
+
+#             beta_sum1 += x[:, n] @ x[:, n]
+#             beta_sum2 += E_z.T @ W_new.T @ x[:, n:n+1]
+#             beta_sum3 += np.trace( E_zzT @ W_new.T @ W_new)
+#         beta_new = N*D / ( beta_sum1 - 2 * beta_sum2 + beta_sum3 )
+
+#         for i in range(0, M):
+#             alphas_new[i] = D / ( W_new[:, i] @ W_new[:, i] )
+
+#         W_diff = (
+#             np.linalg.norm(W_new - W)
+#             / max(np.linalg.norm(W), 1.0)
+#         )
+
+#         beta_diff = (
+#             abs(beta_new - beta)
+#             / max(abs(beta_new), abs(beta), 1.0)
+#         )
+
+#         mask = np.isfinite(alphas_new) & np.isfinite(alphas)
+#         alphas_diff = (
+#             np.linalg.norm(alphas_new[mask] - alphas[mask])
+#             / max(np.linalg.norm(alphas[mask]), 1.0)
+#         )
+#         count += 1
+#         recent_time = time.perf_counter() - last_start
+#         total_time += recent_time
+
+#     print(f"\rAverage {total_time/count} s per iteration over {count} iterations )", end = "\r")
+#     return [W_new, beta_new, alphas_new, count, seed]
 
 def log_likelihood(x, parameters):
 
@@ -293,7 +357,6 @@ if __name__ == '__main__':
     data = SimpleNamespace()
     data.dt = None # set the time difference manually (only needed if simulation time data not saved)
     snapshot_BPCA = True
-
     """
     Normal code execution below
     """
@@ -332,16 +395,15 @@ if __name__ == '__main__':
         data.set[:, ii] = data.results[data.measured_variables[ii]]
 
     # Bayesian PCA
-    limit = 1
+    limit = 1000
     M = 13
     data.snapshot.mean = np.mean(data.set, axis=0)
     x = (data.set-data.snapshot.mean).T # scaling the data 
-    print(np.shape(x))
 
     if snapshot_BPCA == True:
         with ProcessPoolExecutor() as executor:
             global_search(x, M, limit, save_state = False, file = f"OldSnapshot_{snapshot}")
-        shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_{snapshot}.json")
+        shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_{snapshot}_test.json")
 
     # count = 0
     # while len(pdr) > 0:
@@ -441,19 +503,25 @@ if __name__ == '__main__':
 
     # x = x - np.mean(x, axis=1).reshape(-1, 1) # centering the data
 
-    D = 10
-    N = 300
-    true_M = 3
+    # D = 10
+    # N = 300
+    # true_M = 3
 
-    Z = np.random.normal(size=(true_M, N))
-    W_true = np.random.normal(size=(D, true_M))
-    noise = 0.25 * np.random.normal(size=(D, N))
+    # Z = np.random.normal(size=(true_M, N))
+    # W_true = np.random.normal(size=(D, true_M))
+    # noise = 0.25 * np.random.normal(size=(D, N))
 
-    x = W_true @ Z + noise
-    x -= np.mean(x, axis=1, keepdims=True)
+    # x = W_true @ Z + noise
+    # x -= np.mean(x, axis=1, keepdims=True)
 
-    limit = 1
+    # with open("test_x.json", "w") as json_file:
+    #     json.dump(x.tolist(), json_file)
+
+    limit = 100
     M = 9
+
+    with open("test_x.json", "r") as json_file:
+        x = np.array(json.load(json_file))
 
     # with ProcessPoolExecutor() as executor:
     #     global_search(x, M, limit)
@@ -464,33 +532,48 @@ if __name__ == '__main__':
     #     results.Snapshot = SimpleNamespace(**json.load(file))
 
 
-    results = SimpleNamespace()
-    with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
-        results.Snapshot = SimpleNamespace(**json.load(file))
+    # results = SimpleNamespace()
+    # with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
+    #     results.Snapshot = SimpleNamespace(**json.load(file))
 
     # with ProcessPoolExecutor() as executor:
     #     W_unordered, beta, alphas, count, seed = em(x, M)
 
-    W_unordered = np.array(results.Snapshot.best_parameters[0])
-    alphas = np.array(results.Snapshot.best_parameters[2])
-    ordered_indices = np.argsort(1/alphas.reshape(-1))
-    W = W_unordered[:, ordered_indices[::-1]]
-    alphas_ordered = alphas[ordered_indices[::-1]]
-    beta = results.Snapshot.best_parameters[1]
+    # W_unordered, beta, alphas, count, seed = em(x, M, ads = True)
+
+    # # W_unordered = np.array(results.Snapshot.best_parameters[0])
+    # # alphas = np.array(results.Snapshot.best_parameters[2])
+    # ordered_indices = np.argsort(1/alphas.reshape(-1))
+    # retained = W_unordered[:, ordered_indices[::-1]]
+    # alphas_ordered = alphas[ordered_indices[::-1]]
+    # # beta = results.Snapshot.best_parameters[1]
+    # print(f"\n{beta}")
+
+    # W_unordered, beta, alphas= em(x, M, ads = False, seed = seed)[:3]
+    # print(f"\n{beta}")
+
+    # # W_unordered = np.array(results.Snapshot.best_parameters[0])
+    # # alphas = np.array(results.Snapshot.best_parameters[2])
+    # ordered_indices = np.argsort(1/alphas.reshape(-1))
+    # W = W_unordered[:, ordered_indices[::-1]]
+    # alphas_ordered = alphas[ordered_indices[::-1]]
+    # # beta = results.Snapshot.best_parameters[1]
 
     # comparing original BPCA results to ordered and retained components
-    fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
-    hinton(W_unordered, ax1)
-    ax1.set_title("Unordered")
-    ax1.set_xlabel("Features")
-    ax1.set_ylabel("Directions")
-    hinton(W, ax2)
-    ax2.set_title("Ordered")
-    ax2.set_xlabel("Features")
+    # fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
+    # fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(10, 5))
+    # hinton(W_unordered, ax1)
+    # ax1.set_title("Unordered")
+    # ax1.set_xlabel("Features")
+    # ax1.set_ylabel("Directions")
+    # hinton(W, ax2)
+    # ax2.set_title("Ordered")
+    # ax2.set_xlabel("Features")
+    # ax2.set_ylabel("Directions")
     # hinton(retained, ax3)
     # ax3.set_title("Retained")
     # ax3.set_xlabel("Features")
-    plt.show()
+    # plt.show()
 
     print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
-    # plt.show()
+    # plt.show()        

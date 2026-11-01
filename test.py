@@ -274,7 +274,7 @@ def global_search(x, M, limit, save_state = False, file = ""):
 
 D = 10
 N = 300
-true_M = 3
+true_M = 4
 lim = 0.05
 
 num = SimpleNamespace()
@@ -306,10 +306,10 @@ I_K = np.identity(k)
 I_D = np.identity(num.variables)
 
 # x = x.T
-P = W[:, :k] # principal subspace
+P = W # principal subspace
 M = P.T @ P + I_K / beta
 S_var_tx_inv = beta*M
-t = P.T @ np.linalg.solve( P @ P.T + I_D / beta, x ) # score matrix for BPCA
+t = np.linalg.solve( M, P.T ) @ x # score matrix for BPCA
 stats.tsquared95 = chi2.ppf(1-lim, k) # Bayesian PCA version of 95 % confidence limit for Hotelling's T-squared 
 
 # print("W_unordered:", W_unordered.shape)
@@ -321,21 +321,22 @@ stats.tsquared95 = chi2.ppf(1-lim, k) # Bayesian PCA version of 95 % confidence 
 # print("cond(P.T @ P + I_K / beta):",
 #       np.linalg.cond(P.T @ P + I_K / beta))
 
+
 stats.tsquared = np.zeros([num.measurements])
 for column in range(0, num.measurements):
     stats.tsquared[column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
 
-fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
-ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
-ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-# ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
-ax2.set_xlabel("Observation")
-ax2.set_ylabel("Hotelling's T-squared statistic")
-ax2.legend(loc = 'upper left')
-fig2.show()
-# print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
-input("Press Enter to continue...")
-ax2.cla()
+# fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
+# ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+# ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+# # ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
+# ax2.set_xlabel("Observation")
+# ax2.set_ylabel("Hotelling's T-squared statistic")
+# ax2.legend(loc = 'upper left')
+# fig2.show()
+# # print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
+# input("Press Enter to continue...")
+# ax2.cla()
 
 results = SimpleNamespace()
 with open(f"test_results.json", 'r', encoding='utf-8') as file:
@@ -344,36 +345,53 @@ with open(f"test_results.json", 'r', encoding='utf-8') as file:
 W_unordered = np.array(results.Snapshot.best_parameters[0])
 alphas = np.array(results.Snapshot.best_parameters[2])
 ordered_indices = np.argsort(1/alphas.reshape(-1))
-print(np.shape(W))
 W = W_unordered[:, ordered_indices[::-1]]
+hinton(W_unordered)
+hinton(W)
+plt.show()
+print(np.shape(W))
 alphas_ordered = alphas[ordered_indices[::-1]]
 beta = results.Snapshot.best_parameters[1]
 print(beta)
 
-I_K = np.identity(k)
+I_K = np.identity(9)
 I_D = np.identity(num.variables)
 
 # x = x.T
-P = W[:, :k] # principal subspace
+P = W_unordered # principal subspace
+print(np.shape(P))
 M = P.T @ P + I_K / beta
 S_var_tx_inv = beta*M
-t = P.T @ np.linalg.solve( P @ P.T + I_D / beta, x ) # score matrix for BPCA
+t = np.linalg.solve( M, P.T ) @ x # score matrix for BPCA
 stats.tsquared95 = chi2.ppf(1-lim, k) # Bayesian PCA version of 95 % confidence limit for Hotelling's T-squared 
 
+
+# C_mean = P.T @ np.linalg.solve(
+#     P @ P.T + I_D / beta,
+#     P
+# )
+
+# T2_mean = np.einsum(
+#     "ij,jk,ik->i",
+#     t.T,
+#     np.linalg.pinv(C_mean),
+#     t.T
+# )
+# stats.tsquared = T2_mean
 stats.tsquared = np.zeros([num.measurements])
 for column in range(0, num.measurements):
     stats.tsquared[column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
 
-fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
-ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
-ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-# ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
-ax2.set_xlabel("Observation")
-ax2.set_ylabel("Hotelling's T-squared statistic")
-ax2.legend(loc = 'upper left')
-fig2.show()
-# print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
-input("Press Enter to continue...")
-ax2.cla()
+# fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
+# ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+# ax2.plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+# # ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
+# ax2.set_xlabel("Observation")
+# ax2.set_ylabel("Hotelling's T-squared statistic")
+# ax2.legend(loc = 'upper left')
+# fig2.show()
+# # print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
+# # input("Press Enter to continue...")
+# ax2.cla()
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
