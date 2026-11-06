@@ -114,7 +114,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
     while count < limit and ( max(W_diff, alphas_diff, beta_diff) > diff ):
         last_start = time.perf_counter()
-        printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed {file}       ", length = 40)
+        printProgressBar(count, limit, prefix = f'Iteration {count} | W_diff = {W_diff} | beta_diff = {beta_diff} | alphas_diff = {alphas_diff}', suffix = f"Maximum allowed {file}", length = 20)
         W = W_new.copy()
         beta = beta_new
         alphas = alphas_new.copy()
@@ -165,7 +165,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
     print(f"\rAverage {total_time/count} s per iteration over {count} iterations )", end = "\r")
     return [W_new, beta_new, alphas_new, count, seed]
 
-# slow, more readable, version below
+# # slow, more readable, version below
 # def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 #     """
 #     next to try using
@@ -402,7 +402,7 @@ if __name__ == '__main__':
 
     if snapshot_BPCA == True:
         with ProcessPoolExecutor() as executor:
-            global_search(x, M, limit, save_state = False, file = f"OldSnapshot_{snapshot}")
+            global_search(x, M, limit, save_state = True, file = f"OldSnapshot_{snapshot}")
         shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_{snapshot}_test.json")
     # count = 0
     # while len(pdr) > 0:
