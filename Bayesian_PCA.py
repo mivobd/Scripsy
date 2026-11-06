@@ -356,7 +356,7 @@ if __name__ == '__main__':
 
     data = SimpleNamespace()
     data.dt = None # set the time difference manually (only needed if simulation time data not saved)
-    snapshot_BPCA = True
+    snapshot_BPCA = False
     """
     Normal code execution below
     """
@@ -404,7 +404,6 @@ if __name__ == '__main__':
         with ProcessPoolExecutor() as executor:
             global_search(x, M, limit, save_state = False, file = f"OldSnapshot_{snapshot}")
         shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_{snapshot}_test.json")
-
     # count = 0
     # while len(pdr) > 0:
     #     with open(f"{folder_name}/run_{pdr[-1]}.json", 'r', encoding='utf-8') as file:

@@ -286,7 +286,7 @@ for kk in range(start, num.files):
     # # plt.figure(4) # PC 1 versus 3
     # ax[2].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # ax.scatter(t[:, 0], t[:, 1], t[:, 2], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+    ax.scatter(t[:, 0], t[:, 1], t[:, 2], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
     # ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
     # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")

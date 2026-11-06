@@ -141,6 +141,7 @@ num.variables = np.shape(W_unordered)[0]
 ordered_indices = np.argsort(1/alphas)
 W = W_unordered[:, ordered_indices[::-1]]
 alphas_ordered = alphas[ordered_indices[::-1]]
+print(alphas_ordered)
 beta = results.Snapshot.best_parameters[1]
 
 cum_explained = [np.sum(np.diag(1/alphas_ordered[:ii+1])) for ii in range(0, num.OGweights)]/np.sum(np.diag(1/alphas_ordered))
@@ -183,20 +184,30 @@ I_D = np.identity(num.variables)
 # ax3.set_xlabel("Features")
 # plt.show()
 
-U, S, Vt = np.linalg.svd(W, full_matrices=False)
-W = U * S
+U, S, Vt = np.linalg.svd(W_unordered, full_matrices=False)
+W_ortho = U * S
+print(np.shape(W_ortho))
+print(np.shape(S))
+print(np.shape(U))
 
-# U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
-# # comparing PCA to BPCA
-# fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
-# hinton(Vt[:k, :].T, ax1)
-# ax1.set_title("PCA")
-# ax1.set_xlabel("Features")
-# ax1.set_ylabel("Directions")
-# hinton(W, ax2)
-# ax2.set_title("BPCA")
-# ax2.set_xlabel("Features")
-# plt.show()
+U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
+# comparing PCA to BPCA
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(nrows=2, ncols=2)
+hinton(Vt.T, ax1)
+ax1.set_title("PCA")
+ax1.set_xlabel("Features")
+ax1.set_ylabel("Directions")
+hinton(W, ax2)
+ax2.set_title("BPCA")
+ax2.set_xlabel("Features")
+hinton(W_ortho, ax3)
+ax3.set_title("BPCA (orthonomalised)")
+ax3.set_xlabel("Features")
+ax3.set_ylabel("Directions")
+hinton(retained, ax4)
+ax4.set_title("BPCA (retained)")
+ax4.set_xlabel("Features")
+plt.show()
 
 # PCA stats for the chosen principal components
 x = x.T
@@ -284,6 +295,12 @@ num.colours = len(colours)
 markers = [".", "o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "p", "8", "*", "h", "H", "+", "x", "X", "D", "d", "|", "_"]
 # fig, ax = plt.subplots(2, 2)
 # fig3, ax3 = plt.subplots(1, 1) # for Q statistic
+
+fault_index = 0
+fig = plt.figure()
+ax = fig.add_subplot(projection='3d')
+ax.scatter(t[0, :], t[1, :], t[2, :],  marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
 for kk in range(start, num.files):
     fig2, ax2 = plt.subplots(2, 1) # for T-squared contributions and T-squared statistic
     # original data
@@ -386,20 +403,22 @@ for kk in range(start, num.files):
     # # plt.figure(4) # PC 1 versus 3
     # ax[1, 1].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
-    ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
-    ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-    ax2[1].plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
-    ax2[1].set_xlabel("Observation")
-    ax2[1].set_ylabel("Hotelling's T-squared statistic")
-    ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")
-    ax2[1].legend(loc = 'upper left')
-    ax2[0].set_title(f"Hotelling's T-squared contributions from each variable")
-    fig2.show()
-    print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
-    input("Press Enter to continue...")
-    ax2[0].cla()
-    ax2[1].cla()
+    # ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
+    # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+    # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+    # ax2[1].plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
+    # ax2[1].set_xlabel("Observation")
+    # ax2[1].set_ylabel("Hotelling's T-squared statistic")
+    # ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")
+    # ax2[1].legend(loc = 'upper left')
+    # ax2[0].set_title(f"Hotelling's T-squared contributions from each variable")
+    # fig2.show()
+    # print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
+    # input("Press Enter to continue...")
+    # ax2[0].cla()
+    # ax2[1].cla()
+
+    ax.scatter(t[0, :], t[1, :], t[2, :], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
     # ax3.plot(np.linspace(1, num.measurements, num.measurements), stats.Q95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
     # ax3.plot(np.linspace(1, num.measurements, num.measurements), stats.Q, color = 'k', linestyle = '-', label = "Q statistic")
@@ -426,51 +445,51 @@ for index, item in enumerate(stats.__dict__.values()):
 #     json.dump(save, json_file)
 
 
-## Similarity stats
-# A priori labelling for evaluating performance, not available for use
-matches = stats.H_faults == stats.snapshot_fault
-not_matches = [int(ii) for ii in ~matches.astype(bool)]
+# ## Similarity stats
+# # A priori labelling for evaluating performance, not available for use
+# matches = stats.H_faults == stats.snapshot_fault
+# not_matches = [int(ii) for ii in ~matches.astype(bool)]
 
-# Quantifying performance
-Np = np.zeros(3)
-N1 = np.zeros(3)
-N2 = np.zeros(3)
-p = np.zeros(3)
-n = np.zeros(3)
-nmax = np.zeros(3)
-e = np.zeros(3)
-Ndb = np.sum(matches) # historical windows that are actually similar
+# # Quantifying performance
+# Np = np.zeros(3)
+# N1 = np.zeros(3)
+# N2 = np.zeros(3)
+# p = np.zeros(3)
+# n = np.zeros(3)
+# nmax = np.zeros(3)
+# e = np.zeros(3)
+# Ndb = np.sum(matches) # historical windows that are actually similar
 
-print(f"\nSnapshot fault: {stats.snapshot_fault}\n")
+# print(f"\nSnapshot fault: {stats.snapshot_fault}\n")
 
-for ii, statistic in enumerate([["tsquared_violations", stats.r95],["Q_violations", stats.r95]]):#, ["Q_violations", stats.r95]]):
-    candidate_pool = [int(ii) for ii in getattr(stats, statistic[0]) < statistic[1]]
-    Np[ii] = np.sum(getattr(stats, statistic[0]) < statistic[1]) # candidate pool size (number of data sets classified as similar)
-    N1[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (matches)) # candidate pool data sets that are actually similar
-    N2[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
-    p[ii] = N1[ii] / Np[ii] * 100
-    n[ii]= N1[ii] / Ndb * 100
-    nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
-    e[ii] = ( p[ii] + n[ii] ) / 2
+# for ii, statistic in enumerate([["tsquared_violations", stats.r95],["Q_violations", stats.r95]]):#, ["Q_violations", stats.r95]]):
+#     candidate_pool = [int(ii) for ii in getattr(stats, statistic[0]) < statistic[1]]
+#     Np[ii] = np.sum(getattr(stats, statistic[0]) < statistic[1]) # candidate pool size (number of data sets classified as similar)
+#     N1[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (matches)) # candidate pool data sets that are actually similar
+#     N2[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
+#     p[ii] = N1[ii] / Np[ii] * 100
+#     n[ii]= N1[ii] / Ndb * 100
+#     nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
+#     e[ii] = ( p[ii] + n[ii] ) / 2
 
-    print(f"\n{statistic[0]} Results:")
-    print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
+#     print(f"\n{statistic[0]} Results:")
+#     print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
 
-# stats.S_pcaBest = 0.965
-ii=2
-candidate_pool = [int(ii) for ii in getattr(stats, "S_pca") > stats.S_pcaBest]
-Np[ii] = np.sum(stats.S_pca > stats.S_pcaBest) # candidate pool size (number of data sets classified as similar)
-N1[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (matches)) # candidate pool data sets that are actually similar
-N2[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
-p[ii] = N1[ii] / Np[ii] * 100
-n[ii]= N1[ii] / Ndb * 100
-nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
-e[ii] = ( p[ii] + n[ii] ) / 2
+# # stats.S_pcaBest = 0.965
+# ii=2
+# candidate_pool = [int(ii) for ii in getattr(stats, "S_pca") > stats.S_pcaBest]
+# Np[ii] = np.sum(stats.S_pca > stats.S_pcaBest) # candidate pool size (number of data sets classified as similar)
+# N1[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (matches)) # candidate pool data sets that are actually similar
+# N2[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
+# p[ii] = N1[ii] / Np[ii] * 100
+# n[ii]= N1[ii] / Ndb * 100
+# nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
+# e[ii] = ( p[ii] + n[ii] ) / 2
 
-print(f"\nS_pca Results:")
-print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
+# print(f"\nS_pca Results:")
+# print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
 
-legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditons == fault)[0][0]], color = colours[np.where(operating_conditons == fault)[0][0] % num.colours], label=fault, linestyle='None', markerfacecolor='none') for fault in operating_conditons]
+# legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditons == fault)[0][0]], color = colours[np.where(operating_conditons == fault)[0][0] % num.colours], label=fault, linestyle='None', markerfacecolor='none') for fault in operating_conditons]
 
 # # plt.figure(1)
 # fig.legend(handles=legend_elements, loc = 'right')
@@ -491,4 +510,4 @@ legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditon
 
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
-# plt.show()
+plt.show()

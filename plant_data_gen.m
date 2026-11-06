@@ -18,10 +18,10 @@ tic
 
 % Are you generating a large data set (comparable, or the same, in size as
 % used by Johannesmeyer?
-runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
+runs.full = 0; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
 runs.NOC = 54; % integer, number of NOC windows
 runs.fault = 409; % integer, number of windows with faults
-runs.control = 0; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
+runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
 
 runs.snapshot_type = "N"; % string, the operating condition to be used for training
 snapshot_length = 1; % ~, ratio of snapshot length to historical window length
@@ -29,7 +29,7 @@ simulation_time = 120; % min, how long the data windows should be (excluding the
 
 % Noise settings
 noise.M.active = 1; % boolean, measurement white noise active or not 
-noise.AR.active = 0; % boolean, auto-regressive feed noise active or not
+noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
 
 
 
@@ -40,13 +40,13 @@ noise.AR.active = 0; % boolean, auto-regressive feed noise active or not
 % data set (settings below are overridden/ignored for full dataset
 % generation)
 model.runs = 1; % integer, number of simulation runs to be conducted
-model.folder = "Hdata"; % string, where results are going to be saved 
+model.folder = "data"; % string, where results are going to be saved 
 
 % Controller settings
 model.control_arrangement = 0; % boolean, true for 1/TI, false for TI (implementation inside the Simulink controller block)
 model.control.T = 1; % boolean, true to close the temperature cascade control loop, false for no temperature cascade control
 model.control.h = 1; % boolean, true to close the level cascade control loop, false for no level cascade control
-model.contoller_parameters = 1; % boolean, true to use the retuned values, false to use the values from Wong
+model.contoller_parameters = 0; % boolean, true to use the retuned values, false to use the values from Wong
 
 % Disturbance settings
 model.disturb = 0; % boolean, incur disturbances or not
@@ -69,10 +69,6 @@ if runs.full == 1
     end
     
     % directory creation/check -> simulation results stored here
-    if ~isfolder("results")
-        mkdir("results")
-    end
-
     if ~isfolder(folder_name)
         mkdir(folder_name)
     end
@@ -220,7 +216,7 @@ dXdt = @(t, X) [ ... where X = [C_A; % mol L^{-1}, concentration of species A in
     ( SS.Q_F - SS.Q ) ./ A
 ];
 
-X_nominal = [... % initial guesses, values from Wong, J. C. Y.. 2006. Fault detection applications of alternative mean-centering pattern matching in non-repeated multivariate time-series data trajectories.
+X_nominal = [... % initial guesses, values from (Wong, J. C. Y.. 2006. Fault detection applications of alternative mean-centering pattern matching in non-repeated multivariate time-series data trajectories.)
     0.037; ...
     402.35; ...
     345.44; ...
@@ -245,16 +241,17 @@ SS.h = X(end, 4);
 % figure(4)
 % plot(tspan, X(:, 4))
 
-X_nominal = [... % initial guesses, values from Wong, J. C. Y.. 2006. Fault detection applications of alternative mean-centering pattern matching in non-repeated multivariate time-series data trajectories.
+% repeating above with the solved steady state values to ensure steady
+% state was reached
+X_nominal = [... 
     SS.C_A; ...
     SS.T; ...
     SS.T_C; ...
     SS.h ...
     ];
 
-% Steady state values
 tspan = linspace(0, 100, 10000);
-[~, X] = ode23s(dXdt, tspan, X_nominal); % ODE system is stiff. Tested them all and 23s gave the best performance.
+[~, X] = ode23s(dXdt, tspan, X_nominal);
 SS.C_A = X(end, 1);
 SS.T = X(end, 2);
 SS.T_C = X(end, 3);
