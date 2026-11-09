@@ -79,13 +79,7 @@ def hinton(matrix, ax=None):
     # plt.show()
 
 
-
 def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
-    """
-    next to try using
-    linalg.solve(B.T, A.T).T
-    to find A@inv(B) instead of using cholesky
-    """
     count = 0
     D, N = np.shape(x)
     I_M = np.identity(M)
@@ -93,7 +87,6 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
     W = 0
     W_new = np.random.rand(D,M)/10
-    # W_new = np.ones([D,M])
     W_diff = np.sum((W_new-W)**2)
 
     beta = 0
@@ -131,7 +124,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
         beta_new = N*D / ( np.trace(x.T @ x) - 2 * np.trace(E_z.T @ W_new.T @ x) + np.trace(W_new.T @ W_new @ sum_E_zzT) )
 
-        alphas_new = D / np.sum(W_new*W_new, axis=0)
+        alphas_new = ads * D / np.sum(W_new*W_new, axis=0)
 
         W_diff = (
             np.linalg.norm(W_new - W)
@@ -149,13 +142,6 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
             / max(np.linalg.norm(alphas[mask]), 1.0)
         )
 
-        # print(
-        #     f"count={count}, "
-        #     f"W_diff={W_diff}, "
-        #     f"beta_diff={beta_diff}, "
-        #     f"alphas_diff={alphas_diff}"
-        # )
-
         count += 1
 
         recent_time = time.perf_counter() - last_start
@@ -165,7 +151,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
     print(f"\rAverage {total_time/count} s per iteration over {count} iterations )", end = "\r")
     return [W_new, beta_new, alphas_new, count, seed]
 
-# # slow, more readable, version below
+# slow, more readable, version below
 # def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 #     """
 #     next to try using
@@ -210,7 +196,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 
 #             W_sum1 += x[:, n:n+1] @ E_z.T
 #             W_sum2 += E_zzT
-#         W_new = np.linalg.solve((W_sum2 + np.diag(alphas)/beta).T, W_sum1.T).T
+#         W_new = np.linalg.solve((W_sum2 + ads * np.diag(alphas)/beta).T, W_sum1.T).T
 
 #         beta_sum1 = 0
 #         beta_sum2 = 0
@@ -225,7 +211,7 @@ def em(x, M, seed = 0, ads = True, limit = 1e4, diff = 1e-4, file = ""):
 #         beta_new = N*D / ( beta_sum1 - 2 * beta_sum2 + beta_sum3 )
 
 #         for i in range(0, M):
-#             alphas_new[i] = D / ( W_new[:, i] @ W_new[:, i] )
+#             alphas_new[i] = ads * D / ( W_new[:, i] @ W_new[:, i] )
 
 #         W_diff = (
 #             np.linalg.norm(W_new - W)
@@ -277,25 +263,19 @@ def log_likelihood(x, parameters):
 
     return logliklihood
 
-def global_search(x, M, limit, save_state = False, file = ""):
-    """
-    Tries to find global maximum of the log-likelihood function.
-
-    Parameters
-
-    """
+def global_search(x, M, total_searches, save_state = False, file = "", ads = True):
     state = SimpleNamespace()
 
     if save_state == False:
         state.best_log_likelihood = -1e10
-        state.seed = np.zeros([limit], int).tolist()
+        state.seed = np.zeros([total_searches], int).tolist()
         best_parameters = None
-        state.log_likelihood_value = np.zeros([limit])
+        state.log_likelihood_value = np.zeros([total_searches])
         state.log_likelihood_value = state.log_likelihood_value.tolist()
         state.iteration = 0
         state.bestIteration = 0
 
-        for iteration in range(0, limit):
+        for iteration in range(0, total_searches):
             seconds = time.time()*1e4
             state.seed[iteration] = int((iteration+1)*(seconds - int(seconds))*10000)
     elif os.path.exists("save_state.json") == False:
@@ -305,10 +285,10 @@ def global_search(x, M, limit, save_state = False, file = ""):
             state = SimpleNamespace(**json.load(json_file))
         best_parameters = state.best_parameters
 
-    for iteration in range(0 + state.iteration, limit):
-        # printProgressBar(iteration, limit, suffix = f"Complete ({file})")
-        completion = f"{file} [{(iteration+1)/limit*100} % overall]"
-        parameters = em(x, M, state.seed[iteration], file = completion)
+    for iteration in range(0 + state.iteration, total_searches):
+        # printProgressBar(iteration, total_searches, suffix = f"Complete ({file})")
+        completion = f"{file} [{(iteration+1)/total_searches*100} % overall]"
+        parameters = em(x, M, state.seed[iteration], ads, file = completion)
         state.log_likelihood_value[iteration] = log_likelihood(x, parameters)
 
         if state.log_likelihood_value[iteration] > state.best_log_likelihood:
@@ -328,10 +308,6 @@ def global_search(x, M, limit, save_state = False, file = ""):
         with open("save_state.json", "w") as json_file:
             json.dump(state.__dict__, json_file)
 
-        # if state.bestIteration - iteration > 50:
-        #     print("Global search has not found a better solution in 50 iterations, stopping search")
-        #     break
-
     return state.best_log_likelihood, best_parameters
 
 """
@@ -344,33 +320,32 @@ fun and reading the code less tedious.
 """
 !!! CHECK BEFORE EACH SCRIPT EXECUTION !!!
 """
-if __name__ == '__main__':
-    snapshot = "N" # set the operating condition of the snapshot.   "N" for NOC and peruse fault_details.txt for the fault IDs
-    control = 1 # boolean, control (1) or no control (0) for the snapshot
-    autoreggressive_noise = 1
-    measurement_noise = 1
-    alpha = 0.05 # confidence level for the similarity checks
-    failed_runs = ["run_89.json","run_75.json","run_56.json","run_413.json","run_403.json","run_385.json","run_376.json","run_344.json","run_330.json","run_326.json","run_303.json","run_269.json","run_266.json","run_231.json","run_183.json","run_160.json"] # runs where EM did not converge in iteration limit
-    # pdr = [50, 51, 53, 54, 62, 71, 103] # Previously Detected Runs
-    # pndr = [72, 66, 70, 69, 57] # Previously Not Detected Runs
+if __name__ == '__main__': # ensures stable execution of the code with multiprocessing
 
-    data = SimpleNamespace()
-    data.dt = None # set the time difference manually (only needed if simulation time data not saved)
-    snapshot_BPCA = False
+    snapshot = "N"# string, set the operating condition of the snapshot.   "N" for NOC and peruse fault_details.txt for the fault IDs. Classifying faults did not end up being part of the research, so this will never change.
+    control = 0 # integer boolean, control (1) or no control (0) in the snapshot. Choice reflected in digit following "C" in dataset filename.
+    autoregressive_noise = 0 # integer boolean, as above, but with autoregressive noise. Choice reflected in digit following "AR" in dataset filename.
+    measurement_noise = 1 # integer boolean, I think you get the point. Choice reflected in digit following "M" in dataset filename.
+
+    snapshot_BPCA = None # boolean, train a model on the snapshot data or on the historical data. 'None' if you do not want to train on the CSTR data.
+    make_test_data = False # boolean, set to True to make test data with 3 dimensions of high variance and the rest lower variance (like in Bishop's quintessential example with the Hinton plot)
+    total_searches = 1 # number of seeds checked to find a global maximum
+    
     """
     Normal code execution below
     """
-    folder_path = f"BPCA_H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}"
-    if not os.path.isdir(folder_path):
-        os.makedirs(folder_path)
+    data = SimpleNamespace()
+    model_path = f"BPCA_models/C{control}_AR{autoregressive_noise}_M{measurement_noise}"
+    if not os.path.isdir(model_path):
+        os.makedirs(model_path)
 
     operating_conditons = pd.read_csv('fault_details.txt', sep=',')["Fault ID"].to_numpy()
     operating_conditons = np.insert(operating_conditons, 0, "N")
-    folder_name = f"H_C{control}_AR0_M{measurement_noise}"
+    simulation_path = f"simulation_data/C{control}_AR{autoregressive_noise}_M{measurement_noise}"
     ## Snapshot data
     data.snapshot = SimpleNamespace() # dedicated to snapshot-related values
     stats = SimpleNamespace()
-    with open(f"{folder_name}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
+    with open(f"{simulation_path}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
         data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     stats.snapshot_fault = ''.join(chr(ii) for ii in (int(jj) for jj in data.results["fault"]))
     data.measured_variables = data.results["measurements"]
@@ -395,184 +370,75 @@ if __name__ == '__main__':
         data.set[:, ii] = data.results[data.measured_variables[ii]]
 
     # Bayesian PCA
-    limit = 1000
     M = 13
     data.snapshot.mean = np.mean(data.set, axis=0)
     x = (data.set-data.snapshot.mean).T # scaling the data 
 
     if snapshot_BPCA == True:
+
         with ProcessPoolExecutor() as executor:
-            global_search(x, M, limit, save_state = True, file = f"OldSnapshot_{snapshot}")
-        shutil.copy2(f"save_state.json", f"{folder_path}/OldSnapshot_{snapshot}_test.json")
-    # count = 0
-    # while len(pdr) > 0:
-    #     with open(f"{folder_name}/run_{pdr[-1]}.json", 'r', encoding='utf-8') as file:
-    #         data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+            global_search(x, M, total_searches, save_state = False, file = f"OldSnapshot_{snapshot}")
+        shutil.copy2(f"save_state.json", f"{model_path}/OldSnapshot_{snapshot}_{total_searches}.json")
 
-    #     if count == 0:
-    #         num.recorded_points = len(data.results["t"])
-    #         num.measurements = len(data.results["t"]) - num.ignore        
+    elif snapshot_BPCA == False:
 
-    #     data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
-    #     # putting all the simulation data into one matrix
-    #     for ii in range(0,num.variables):
-    #         data.set[:, ii] = data.results[data.measured_variables[ii]]
+        files = [f.name for f in Path(f"{simulation_path}").iterdir() if f.is_file()]
+        files_complete = [f.name for f in Path(f"{model_path}").iterdir() if f.is_file()] 
+        for i in range(len(files_complete)):
+            files.remove(f"{files_complete[i]}")
 
-    #     data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-    #     x = ((data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std).T # scaling the data
+        files.remove(f"OldSnapshot_{snapshot}.json")
 
-    #     global_search(x, M, limit, file = f"run_{pdr[-1]}.json")
-    #     shutil.copy2(f"save_state.json", f"{folder_path}/run_{pdr[-1]}.json")
-    #     pdr.pop()
-    #     count += 1
+        count = 0
+        while len(files) > 1:
 
-    # while len(pndr) > 0:
-    #     with open(f"{folder_name}/run_{pndr[-1]}.json", 'r', encoding='utf-8') as file:
-    #         data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+            with open(f"{simulation_path}/{files[-1]}", 'r', encoding='utf-8') as file:
+                data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
 
-    #     data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
-    #     # putting all the simulation data into one matrix
-    #     for ii in range(0,num.variables):
-    #         data.set[:, ii] = data.results[data.measured_variables[ii]]
+            if count == 0:
+                num.recorded_points = len(data.results["t"])
+                num.measurements = len(data.results["t"]) - num.ignore        
 
-    #     data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-    #     x = ((data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std).T # scaling the data
+            # putting all the simulation data into one matrix
+            data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
+            for ii in range(0,num.variables):
+                data.set[:, ii] = data.results[data.measured_variables[ii]]
 
-    #     global_search(x, M, limit, file = f"run_{pndr[-1]}.json")
-    #     shutil.copy2(f"save_state.json", f"{folder_path}/run_{pndr[-1]}.json")
-    #     pndr.pop()
+            data.historical_mean = np.mean(data.set, axis=0)
+            x = (data.set-data.historical_mean).T # scaling the data
 
-    files = ["run_62.json"]
-    # files = [f.name for f in Path(f"{folder_name}").iterdir() if f.is_file()]
-    # files_complete = [f.name for f in Path(f"{folder_path}").iterdir() if f.is_file()] 
-    # for i in range(len(files_complete)):
-    #     files.remove(f"{files_complete[i]}")
+            global_search(x, M, total_searches, file = f"{simulation_path}/{files[-1]}")
+            shutil.copy2(f"save_state.json", f"{model_path}/{files[-1]}")
+            files.pop()
+            count += 1
 
-    count = 0
-    while len(files) > 1:
-        with open(f"{folder_name}/{files[-1]}", 'r', encoding='utf-8') as file:
-            data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+    else:
+        if make_test_data == True:
 
-        if count == 0:
-            num.recorded_points = len(data.results["t"])
-            num.measurements = len(data.results["t"]) - num.ignore        
+            D = 10
+            N = 300
+            true_M = 3
 
-        data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
-        # putting all the simulation data into one matrix
-        for ii in range(0,num.variables):
-            data.set[:, ii] = data.results[data.measured_variables[ii]]
+            Z = np.random.normal(size=(true_M, N))
+            W_true = np.random.normal(size=(D, true_M))
+            noise = 0.25 * np.random.normal(size=(D, N))
 
-        data.historical_mean = np.mean(data.set, axis=0)
-        x = (data.set-data.historical_mean).T # scaling the data
+            x = W_true @ Z + noise
+            x -= np.mean(x, axis=1, keepdims=True)
 
-        global_search(x, M, limit, file = f"{folder_name}/{files[-1]}")
-        shutil.copy2(f"save_state.json", f"{folder_path}/{files[-1]}")
-        files.pop()
-        count += 1
+            with open("simulation_data/test_x.json", "w") as json_file:
+                json.dump(x.tolist(), json_file)
 
+        else:
+            with open("simulation_data/test_x.json", "r") as json_file:
+                x = np.array(json.load(json_file))
 
-    # with open(f"{folder_name}/run_463.json", 'r', encoding='utf-8') as file:
-    #     data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
+        M = 9
+        with ProcessPoolExecutor() as executor:
+            log_likelihood, parameters = global_search(x, M, total_searches, ads = False)
+        shutil.copy2(f"save_state.json", f"BPCA_models/test_results.json")
 
-    # if count == 0:
-    #     num.recorded_points = len(data.results["t"])
-    #     num.measurements = len(data.results["t"]) - num.ignore        
-
-    # data.set = np.zeros((num.recorded_points, num.variables)) # initialising the matrix that will have all the data to perform PCA
-    # # putting all the simulation data into one matrix
-    # for ii in range(0,num.variables):
-    #     data.set[:, ii] = data.results[data.measured_variables[ii]]
-
-    # data.snapshot.mean, data.snapshot.std = np.mean(data.set[num.ignore:, :], axis=0), np.std(data.set[num.ignore:, :], axis=0, ddof=1) # calculating the mean and standard deviation of the data (ignoring the NOC portion)
-    # x = ((data.set[num.ignore:, :]-data.snapshot.mean)/data.snapshot.std).T # scaling the data
-
-    # state, best_parameters = global_search(x, M, 1000, file = f"{folder_name}/run_54.json")
-    # print(best_parameters[1])
-    # shutil.copy2(f"save_state.json", f"{folder_path}/sigma2_test_463.json")
-
-
-
-    # x = np.zeros([10, 300])
-    # np.random.seed(1)
-
-    # for d in range(0, 10):
-    #     x[d, :] = np.random.normal(loc = 0, scale = 0.5, size = 300)
-    # for d in [1, 3, 6]:
-    #     x[d, :] = np.random.normal(loc = 0, scale = 1, size = 300)
-
-    # x = x - np.mean(x, axis=1).reshape(-1, 1) # centering the data
-
-    # D = 10
-    # N = 300
-    # true_M = 3
-
-    # Z = np.random.normal(size=(true_M, N))
-    # W_true = np.random.normal(size=(D, true_M))
-    # noise = 0.25 * np.random.normal(size=(D, N))
-
-    # x = W_true @ Z + noise
-    # x -= np.mean(x, axis=1, keepdims=True)
-
-    # with open("test_x.json", "w") as json_file:
-    #     json.dump(x.tolist(), json_file)
-
-    limit = 100
-    M = 9
-
-    with open("test_x.json", "r") as json_file:
-        x = np.array(json.load(json_file))
-
-    # with ProcessPoolExecutor() as executor:
-    #     global_search(x, M, limit)
-    # shutil.copy2(f"save_state.json", f"test_results.json")
-
-    # results = SimpleNamespace()
-    # with open(f"test_results.json", 'r', encoding='utf-8') as file:
-    #     results.Snapshot = SimpleNamespace(**json.load(file))
-
-
-    # results = SimpleNamespace()
-    # with open(f"{folder_path}/OldSnapshot_N.json", 'r', encoding='utf-8') as file:
-    #     results.Snapshot = SimpleNamespace(**json.load(file))
-
-    # with ProcessPoolExecutor() as executor:
-    #     W_unordered, beta, alphas, count, seed = em(x, M)
-
-    # W_unordered, beta, alphas, count, seed = em(x, M, ads = True)
-
-    # # W_unordered = np.array(results.Snapshot.best_parameters[0])
-    # # alphas = np.array(results.Snapshot.best_parameters[2])
-    # ordered_indices = np.argsort(1/alphas.reshape(-1))
-    # retained = W_unordered[:, ordered_indices[::-1]]
-    # alphas_ordered = alphas[ordered_indices[::-1]]
-    # # beta = results.Snapshot.best_parameters[1]
-    # print(f"\n{beta}")
-
-    # W_unordered, beta, alphas= em(x, M, ads = False, seed = seed)[:3]
-    # print(f"\n{beta}")
-
-    # # W_unordered = np.array(results.Snapshot.best_parameters[0])
-    # # alphas = np.array(results.Snapshot.best_parameters[2])
-    # ordered_indices = np.argsort(1/alphas.reshape(-1))
-    # W = W_unordered[:, ordered_indices[::-1]]
-    # alphas_ordered = alphas[ordered_indices[::-1]]
-    # # beta = results.Snapshot.best_parameters[1]
-
-    # comparing original BPCA results to ordered and retained components
-    # fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
-    # fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(10, 5))
-    # hinton(W_unordered, ax1)
-    # ax1.set_title("Unordered")
-    # ax1.set_xlabel("Features")
-    # ax1.set_ylabel("Directions")
-    # hinton(W, ax2)
-    # ax2.set_title("Ordered")
-    # ax2.set_xlabel("Features")
-    # ax2.set_ylabel("Directions")
-    # hinton(retained, ax3)
-    # ax3.set_title("Retained")
-    # ax3.set_xlabel("Features")
-    # plt.show()
+        print(f"\nbeta: {parameters[1]}")
 
     print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
     # plt.show()        

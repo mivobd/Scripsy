@@ -1,19 +1,16 @@
 ## Housekeeping
 from types import SimpleNamespace
 import json
-import os
 import subprocess
+import os
 import numpy as np
-from scipy.stats import f, norm, binom
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
 import time
 
 subprocess.run('cls', shell=True)
 timer_start = time.perf_counter()
 
-def tabulate_results(file_name):
+def tabulate_results(file_name, excel, sheet_name, plotting = None):
     np.seterr(invalid='ignore', divide='ignore')
     with open(f"results/{file_name}.json", "r") as json_file:
         stats = SimpleNamespace(**json.load(json_file))
@@ -80,17 +77,31 @@ def tabulate_results(file_name):
 
     results = {
         # "Method": ["Hotelling's T-squared", "Q statistic", "PCA similarity"],
-        "Np": Np,
-        "N1": N1,
-        "N2": N2,
-        "Ndb": Ndb,
-        "p": p,
-        "n": n,
-        "nmax": nmax,
-        "e": e
+        "N_p": Np,
+        "N_1": N1,
+        "N_2": N2,
+        "N_db": Ndb,
+        "p (%)": p,
+        "η (%)": n,
+        "η_max (%)": nmax,
+        "ξ (%)": e
     }
-    print(f"{file_name} results:\n{pd.DataFrame(results, index=["Hotelling's T-squared", "Q statistic", "PCA similarity"])}\n\n")
+    table = pd.DataFrame(results, index=["Hotelling's T-squared", "Q-statistic", "S_PCA"])
+
+    # if plotting != None:
+
+    if os.path.exists(f"results/{excel}.xlsx"):
+        with pd.ExcelWriter(f"results/{excel}.xlsx", mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
+            table.to_excel(writer, sheet_name=sheet_name)
+    else:
+        with pd.ExcelWriter(f"results/{excel}.xlsx", mode='w', engine='openpyxl') as writer:
+            table.to_excel(writer, sheet_name=sheet_name)
+
+    print(f"{file_name} results:\n{table}\n\n")
     return None
+
+control = 1
+measurement_noise = 1
 
 num = SimpleNamespace()
 operating_conditons = pd.read_csv('fault_details.txt', sep=',')["Fault ID"].to_numpy()
@@ -100,8 +111,21 @@ num.colours = len(colours)
 markers = [".", "o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "p", "8", "*", "h", "H", "+", "x", "X", "D", "d", "|", "_"]
 # fig, ax = plt.subplots(2, 2)
 
-tabulate_results("PCA(cum_explained)")
-tabulate_results("PCA(OHT)")
-tabulate_results("BPCA")
+selection_types = ["CEV", "OHT", "SCREE"]
+limits_checked = [0.05, 0.01]
+autoregressive_noise_options = [0, 1]
+
+# fig, ax = plt.subplots(1, 1, layout='constrained')
+
+for autoregressive_noise in autoregressive_noise_options:
+    for alpha in limits_checked:
+        for selection_type in selection_types:
+            tabulate_results(f"PCA({selection_type})_C{control}_AR{autoregressive_noise}_M{measurement_noise}_{int(100*(1-alpha))}a", f"{selection_type}", f"C{control}_AR{autoregressive_noise}_M{measurement_noise}_{int(100*(1-alpha))}a")
+
+
+
+
+tabulate_results(f"BPCA_100", "BPCA", "100")
+tabulate_results(f"BPCA_1000_95a", "BPCA", "1000")
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")

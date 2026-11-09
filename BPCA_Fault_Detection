@@ -9,6 +9,7 @@ from matplotlib.lines import Line2D
 import pandas as pd
 import time
 from pathlib import Path
+import os
 
 subprocess.run('cls', shell=True)
 timer_start = time.perf_counter()
@@ -82,11 +83,25 @@ fun and reading the code less tedious.
 """
 !!! CHECK BEFORE EACH SCRIPT EXECUTION !!!
 """
+
 snapshot = "N" # set the operating condition of the snapshot.   "N" for NOC and peruse fault_details.txt for the fault IDs
 control = 1 # boolean, control (1) or no control (0) for the snapshot
-autoreggressive_noise = 0
+autoregressive_noise = 0
 measurement_noise = 1
+
 lim = 0.05 # confidence level for the similarity checks
+total_searches = 1000 # global search count used for the BPCA model
+
+plot_PC_selection = False # boolean, set to true to view how the number of PCs was chosen
+show_snapshot_Tsquared = False # boolean, set to true to view the T-squared statistic results for the snapshot data
+
+compare_ordered_and_retained = False # boolean, set to true to view the original BPCA results versus the ordered and retained components
+compare_BPCA_and_PCA = True # boolean, set to true to view the original BPCA results versus PCA results
+
+plot_statistics = False # boolean, set to true to view T-squared and Q-statistic plots for each run (highly recommend using the "view_specific_run" to check random runs. Most interesting are step change faults.
+check_contributions = False # boolean, prints the value of T-squared calculated normally versus as the sum of contributions from variables.
+view_specific_run = None # integer, "None" by default for normal script execution. Set to the run number you want to view.
+plot_components = False # boolean, set to true to view the first three principal components for each run on a 3D scatter plot (highly recommend using the "view_specific_run" to check random runs. Most interesting are step change faults.
 
 """
 Normal code execution below
@@ -99,40 +114,36 @@ stats = SimpleNamespace()
 # Simulation results
 data = SimpleNamespace()
 data.snapshot = SimpleNamespace() # dedicated to snapshot-related values
-folder_name = f"H_C{control}_AR{autoreggressive_noise}_M{measurement_noise}"
-with open(f"{folder_name}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
+simulation_path = f"simulation_data/C{control}_AR{autoregressive_noise}_M{measurement_noise}"
+with open(f"{simulation_path}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
     data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
 stats.snapshot_fault = ''.join(chr(ii) for ii in (int(jj) for jj in data.results["fault"]))
 data.t = data.results["t"]
 data.dt = data.t[1] - data.t[0]
 num.ignore = int(data.results["fault time"] / data.dt) # the number of measurements that will be ignored (corresponding to the period of NOC before the disturbance)
 
-# PCA
+
+# Simulation data preparation
 num.measurements = len(data.t) - num.ignore # the number of measurements that will be used for PCA (corresponding to the period after the disturbance)
 num.recorded_points = len(data.results["t"])
 data.measured_variables = data.results["measurements"]
 data.measured_variables.remove("t") # the measurement times are not being considered for PCA, removing it here saves effort later
 num.variables = len(data.measured_variables); # the number of variables that will be in the matrix we perform PCA on
 data.set = np.zeros([num.recorded_points, num.variables]) # initialising the matrix that will store the dataset used to perform PCA
+
 # putting all the simulation data into one matrix
 for ii in range(0, num.variables):
     data.set[:, ii] = data.results[data.measured_variables[ii]]
-# data.snapshot.mean = np.mean(data.set[num.ignore:, :], axis=0)
-# x = (data.set[num.ignore:, :] - data.snapshot.mean) # scaling the data
 data.snapshot.mean = np.mean(data.set, axis=0)
 x = (data.set-data.snapshot.mean) # scaling the data
 
-# U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
-# ordered_indices = np.argsort(S) # ordering the singular values from largest to smallest
-# Vt = Vt[ordered_indices[::-1], :] # ordering the right singular vectors to match the ordered singular values
 
 # BPCA results
 results = SimpleNamespace()
-folder_path = f"BPCA_H_C{control}_AR1_M{measurement_noise}"
-# with open(f"{folder_path}/OldSnapshot_{snapshot}.json", 'r', encoding='utf-8') as file:
-with open(f"{folder_path}/OldSnapshot_{snapshot}_test.json", 'r', encoding='utf-8') as file:        
+model_path = f"BPCA_models/C{control}_AR{autoregressive_noise}_M{measurement_noise}"
+with open(f"{model_path}/OldSnapshot_{snapshot}_{total_searches}.json", 'r', encoding='utf-8') as file:        
         results.Snapshot = SimpleNamespace(**json.load(file)) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
-# ppca = em(x, M, results.Snapshot["best_parameters"][4], False)
+
 
 W_unordered = np.array(results.Snapshot.best_parameters[0])
 alphas = np.array(results.Snapshot.best_parameters[2]).reshape(-1)
@@ -141,15 +152,14 @@ num.variables = np.shape(W_unordered)[0]
 ordered_indices = np.argsort(1/alphas)
 W = W_unordered[:, ordered_indices[::-1]]
 alphas_ordered = alphas[ordered_indices[::-1]]
-print(alphas_ordered)
 beta = results.Snapshot.best_parameters[1]
+
 
 cum_explained = [np.sum(np.diag(1/alphas_ordered[:ii+1])) for ii in range(0, num.OGweights)]/np.sum(np.diag(1/alphas_ordered))
 for ii in range(0, num.OGweights):
     if cum_explained[ii] > 0.95:
         k = ii+1
         break
-print(num.OGweights, k)
 retained = np.zeros((num.variables, num.OGweights))
 for ii in range(0, k):
     retained[:, ii] = W[:, ii].reshape(14)
@@ -157,57 +167,60 @@ for ii in range(0, k):
 I_K = np.identity(k)
 I_D = np.identity(num.variables)
 
-# # visualising the selection of retained number of principal components
-# weight_nums = np.linspace(1, num.OGweights, num.OGweights)
-# plt.plot(weight_nums, cum_explained, label = "Cumulative Relative Inverse \u03B1")
-# plt.plot([0, num.OGweights], [0.95, 0.95], 'r--', label = "95% threshold")
-# plt.plot([k, k], [0, 1], 'g--', label = f"Chosen k = {k}")
-# plt.ylabel("Cumulative Value")
-# plt.xlabel("Number of \u03B1's")
-# plt.ylim([0, 1])
-# plt.xlim([0, num.OGweights])
-# plt.xticks(np.arange(0, num.OGweights+1, 1))
-# plt.legend()
-# plt.show()
 
-# # comparing original BPCA results to ordered and retained components
-# fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(10, 5))
-# hinton(W_unordered, ax1)
-# ax1.set_title("Unordered")
-# ax1.set_xlabel("Features")
-# ax1.set_ylabel("Directions")
-# hinton(W, ax2)
-# ax2.set_title("Ordered")
-# ax2.set_xlabel("Features")
-# hinton(retained, ax3)
-# ax3.set_title("Retained")
-# ax3.set_xlabel("Features")
-# plt.show()
+if plot_PC_selection == True:
+    # visualising the selection of retained number of principal components
+    weight_nums = np.linspace(1, num.OGweights, num.OGweights)
+    fig, ax = plt.subplots(1, 1, layout = "constrained")
+    ax.plot(weight_nums, cum_explained, label = "Cumulative Relative Inverse \u03B1")
+    ax.plot([0, num.OGweights], [0.95, 0.95], 'r--', label = "95% threshold")
+    ax.plot([k, k], [0, 1], 'g--', label = f"Chosen k = {k}")
+    ax.set_ylabel("Cumulative Value")
+    ax.set_xlabel("Number of \u03B1's")
+    ax.set_ylim([0, 1])
+    ax.set_xlim([0, num.OGweights])
+    ax.set_xticks(np.arange(0, num.OGweights+1, 1))
+    ax.legend()
+    plt.show()
 
-U, S, Vt = np.linalg.svd(W_unordered, full_matrices=False)
-W_ortho = U * S
-print(np.shape(W_ortho))
-print(np.shape(S))
-print(np.shape(U))
+if compare_ordered_and_retained == True:
+    # comparing original BPCA results to ordered and retained components
+    fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(10, 5), layout = "constrained")
+    hinton(W_unordered, ax1)
+    ax1.set_title("Unordered")
+    ax1.set_xlabel("Features")
+    ax1.set_ylabel("Directions")
+    hinton(W, ax2)
+    ax2.set_title("Ordered")
+    ax2.set_xlabel("Features")
+    hinton(retained, ax3)
+    ax3.set_title("Retained")
+    ax3.set_xlabel("Features")
+    plt.show()
 
-U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
-# comparing PCA to BPCA
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(nrows=2, ncols=2)
-hinton(Vt.T, ax1)
-ax1.set_title("PCA")
-ax1.set_xlabel("Features")
-ax1.set_ylabel("Directions")
-hinton(W, ax2)
-ax2.set_title("BPCA")
-ax2.set_xlabel("Features")
-hinton(W_ortho, ax3)
-ax3.set_title("BPCA (orthonomalised)")
-ax3.set_xlabel("Features")
-ax3.set_ylabel("Directions")
-hinton(retained, ax4)
-ax4.set_title("BPCA (retained)")
-ax4.set_xlabel("Features")
-plt.show()
+if compare_BPCA_and_PCA == True:
+    U, S, Vt = np.linalg.svd(W_unordered, full_matrices=False)
+    W_ortho = U * S
+
+    U, S, Vt = np.linalg.svd(x, full_matrices=False) # computing the SVD of the scaled data
+    # comparing PCA to BPCA
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(nrows=2, ncols=2, layout='tight')
+    hinton(Vt.T, ax1)
+    ax1.set_title("PCA")
+    ax1.set_xlabel("Features")
+    ax1.set_ylabel("Directions")
+    hinton(W, ax2)
+    ax2.set_title("BPCA")
+    ax2.set_xlabel("Features")
+    hinton(W_ortho, ax3)
+    ax3.set_title("BPCA (orthonomalised)")
+    ax3.set_xlabel("Features")
+    ax3.set_ylabel("Directions")
+    hinton(retained, ax4)
+    ax4.set_title("BPCA (retained)")
+    ax4.set_xlabel("Features")
+    plt.show()
+
 
 # PCA stats for the chosen principal components
 x = x.T
@@ -215,33 +228,14 @@ P = W[:, :k] # principal subspace
 M = P.T @ P + I_K / beta
 S_var_tx_inv = beta*M
 t = P.T @ np.linalg.solve( P @ P.T + I_D / beta, x ) # score matrix for BPCA
-e = x - P @ t # shape(t) = (m, n), residuals or error, inter alia
-stats.Q_tr = np.sum( e**2, axis=1 )
+xbar = P @ t
+e = x - xbar # shape(t) = (m, n), residuals or error, inter alia
+
+stats.Q_tr = np.sum( e**2, axis=0 )
 stats.meanQ_tr = np.mean( stats.Q_tr )
 stats.varQ_tr = np.var( stats.Q_tr, ddof=1 )
 g = stats.varQ_tr / ( 2*stats.meanQ_tr )
 h = stats.meanQ_tr / g
-
-# C = P @ P.T + I_D / beta
-# t_pinv = P.T @ np.linalg.pinv(C) @ x
-# print(t[0,0])
-# print(t_pinv[0,0])
-
-# print("W_unordered:", W_unordered.shape)
-# print("alphas:", alphas.shape)
-# print("ordered_indices:", ordered_indices.shape)
-# print("W:", W.shape)
-# print("P:", P.shape)
-# print("rank(P):", np.linalg.matrix_rank(P))
-# print("cond(P.T @ P + I_K / beta):",
-#       np.linalg.cond(P.T @ P + I_K / beta))
-
-# C = P @ P.T + I_D / beta
-
-# print("beta:", beta)
-# print("1/beta:", 1/beta)
-# print("rank(P):", np.linalg.matrix_rank(P))
-# print("cond(C):", np.linalg.cond(C))
 
 # Similarity checks
 L = P
@@ -250,264 +244,258 @@ stats.Q95 = g*chi2.ppf(1-lim, h) # Bayesian PCA version of 95 % confidence limit
 stats.r95 = binom.ppf(1-lim, 1024, lim) # hardcoding the number of expected measurements... surely this will not bite me in the ass later...
 stats.S_pcaBest = 0.965 # Johannesmeyer provided best value
 
-# C_mean = P.T @ np.linalg.solve(
-#     P @ P.T + I_D / beta,
-#     P
-# )
 
-# T2_mean = np.einsum(
-#     "ij,jk,ik->i",
-#     t.T,
-#     np.linalg.pinv(C_mean),
-#     t.T
-# )
-# stats.tsquared = T2_mean
-stats.tsquared = np.einsum("ij,jk,ik->i", t.T, S_var_tx_inv, t.T)
+if show_snapshot_Tsquared == True:
+    tsquared = np.zeros(num.recorded_points)
+    for column in range(0, num.recorded_points):
+        tsquared[column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
 
 
-# fig2, ax2 = plt.subplots(1, 1) # for T-squared contributions and T-squared statistic
-# ax2.plot(np.linspace(1, num.recorded_points, num.recorded_points), stats.tsquared95*np.ones(num.recorded_points), color = 'r', linestyle = '--', label = "95% confidence limit")
-# ax2.plot(np.linspace(1, num.recorded_points, num.recorded_points), stats.tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-# ax2.plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
-# ax2.set_xlabel("Observation")
-# ax2.set_ylabel("Hotelling's T-squared statistic")
-# ax2.legend(loc = 'upper left')
-# fig2.show()
-# # print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
-# input("Press Enter to continue...")
-# ax2.cla()
+    fig2, ax2 = plt.subplots(1, 1, layout='constrained')
+    ax2.plot(np.linspace(1, num.recorded_points, num.recorded_points), stats.tsquared95*np.ones(num.recorded_points), color = 'r', linestyle = '--', label = "95% confidence limit")
+    ax2.plot(np.linspace(1, num.recorded_points, num.recorded_points), tsquared, color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+    ax2.set_xlabel("Observation")
+    ax2.set_ylabel("Hotelling's T-squared statistic")
+    ax2.legend(loc = 'upper left')
+    plt.show()
 
-# historical data
-files = [f.name for f in Path(folder_path).iterdir() if f.is_file()]
-files.remove(f"OldSnapshot_{snapshot}.json")
-num.files = 62#len(files)
+
+## historical data
+if view_specific_run != None:
+    start = view_specific_run - 1
+    num.files = view_specific_run
+else:
+    start = 0
+    num.files = 1
+    while os.path.exists(f"{model_path}/run_{num.files}.json"):
+        num.files = num.files + 1
+    num.files = num.files - 1 # the number of data files
+
 
 # Initialising arrays 
-start = 61
 stats.tsquared_violations = np.zeros(num.files)
 stats.tsquared_contributions = np.zeros([num.files, num.variables])
 stats.Q_violations = np.zeros(num.files)
+stats.Q_contributions = np.zeros([num.files, num.variables])
 stats.S_pca = np.zeros(num.files)
 data.H = SimpleNamespace()
 stats.H_faults = np.empty(num.files, dtype=np.dtype('U5'))
 colours = ["#008080", "#A52A2A", "#FFD700", "#40E0D0", "#ADD8E6", "#000080", "#90EE90", "#006400", "#FFCCCB", "#8B0000", "#E6E6FA", "#4B0082", "#FFDAB9", "#D2691E", "#FFB6C1", "#C71585", "#D3D3D3", "#4A4A4A", "#000000", "#FFA500", "#8B8000"]
 num.colours = len(colours)
 markers = [".", "o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "p", "8", "*", "h", "H", "+", "x", "X", "D", "d", "|", "_"]
-# fig, ax = plt.subplots(2, 2)
-# fig3, ax3 = plt.subplots(1, 1) # for Q statistic
 
-fault_index = 0
-fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
-ax.scatter(t[0, :], t[1, :], t[2, :],  marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
+if plot_components == True:
+    fault_index = 0
+    fig3D = plt.figure()
+    ax3D = fig3D.add_subplot(projection='3d')
+    ax3D.scatter(t[:, 0], t[:, 1], t[:, 2],  marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'NOC')
+
+    fig, ax = plt.subplots(1, 3, layout='constrained')
+    # PC 1 versus 2
+    ax[0].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'Snapshot')
+    ax[0].set_xlabel("PC 1")
+    ax[0].set_ylabel("PC 2")
+
+    # PC 2 versus 3
+    ax[1].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'Snapshot')
+    ax[1].set_xlabel("PC 2")
+    ax[1].set_ylabel("PC 3")
+
+    # PC 1 versus 3
+    ax[2].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'Snapshot')
+    ax[2].set_xlabel("PC 1")
+    ax[2].set_ylabel("PC 3")
+
 
 for kk in range(start, num.files):
-    fig2, ax2 = plt.subplots(2, 1) # for T-squared contributions and T-squared statistic
+    if plot_statistics == True:
+        fig2, ax2 = plt.subplots(2, 1, layout='constrained') # for T-squared contributions and T-squared statistic
+        fig3, ax3 = plt.subplots(2, 1, layout='constrained') # for Q statistic
+    
     # original data
-    with open(f"{folder_name}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
+    with open(f"{simulation_path}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
         data.results = json.load(file) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     stats.H_faults[kk] = ''.join(chr(ii) for ii in (int(jj) for jj in data.results["fault"]))
+    fault_index = np.where(operating_conditons == stats.H_faults[kk])[0][0]
 
     if kk == start:
-        # print(np.shape(data.results["t"]))
         num.recorded_points = len(data.results["t"])
-        # num.measurements = len(data.results["t"]) - num.ignore
-        num.measurements = len(data.results["t"]) 
 
+        if plot_statistics == True:
+            num.measurements = num.recorded_points
+        else:
+            num.measurements = len(data.results["t"]) - num.ignore
+            
         stats.tsquared = np.zeros([num.files, num.measurements])
         stats.Q = np.zeros([num.files, num.measurements])
+
+        def observation_to_time(observation):
+            return observation * data.dt
+        def time_to_observation(time):
+            return time / data.dt
 
     data.set = np.zeros([num.recorded_points, num.variables]) # initialising the matrix that will have all the data to perform PCA
     # putting all the simulation data into one matrix
     for ii in range(0,num.variables):
         data.set[:, ii] = data.results[data.measured_variables[ii]]
                                                                                                              
-    # x = (data.set[num.ignore:, :]-data.snapshot.mean).T # scaling the data
-    x = (data.set-data.snapshot.mean).T
+    if plot_statistics == True:
+        x = (data.set[:, :]-data.snapshot.mean)
+    else:
+        x = (data.set[num.ignore:, :]-data.snapshot.mean) # scaling the data
+    x = x.T
 
     # BPCA results
-    with open(f"BPCA_H_C{control}_AR1_M{measurement_noise}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
-    # with open(f"{folder_path}/sigma2_test_463.json", 'r', encoding='utf-8') as file:
+    with open(f"{model_path}/run_{kk+1}.json", 'r', encoding='utf-8') as file:
         results.H = SimpleNamespace(**json.load(file)) # results = (keys: string), (values: 1x1 cell array: 1024x1 cell)
     W_unordered = np.array(results.H.best_parameters[0])
     alphas = 1/np.array(results.H.best_parameters[2])
-    num.OGweights = len(alphas)
     num.variables = np.shape(W_unordered)[0]
-    ordered_indices = np.argsort(alphas[:, 0])
+    np.argsort(1/alphas)
     W = W_unordered[:, ordered_indices[::-1]]
-    beta_new = results.H.best_parameters[1][0][0]
+    P = W[:, :k] # feature subspace of historical data
 
     # tsquared
-    # P = W[:, :k] # principal subspace
-    t = L.T @ np.linalg.solve(L@L.T + I_D/beta, x) # score matrix
-    # print(np.shape(t))
+    t = L.T @ np.linalg.solve( L @ L.T + I_D / beta, x) # score matrix
 
-    # # cov_tx = P.T
-    # # cov_xt = P
-    # var_x = P@P.T + I_D/beta
-    # # var_t = I
-    # var_tx = I_K - P.T@var_x**-1@P
-    M = L.T@L + I_K/beta
-    var_tx_inv = beta*M
-    # print(beta)
-    # print(1/beta)
+    M = L.T @ L + I_K / beta
+    var_tx_inv = beta * M
 
-    # C_mean = P.T @ np.linalg.solve(
-    #     P @ P.T + I_D / beta,
-    #     P
-    # )
-
-    # T2_mean = np.einsum(
-    #     "ij,jk,ik->i",
-    #     t.T,
-    #     np.linalg.pinv(C_mean),
-    #     t.T
-    # )
-    # stats.tsquared[kk, :] = T2_mean
     for column in range(0, num.measurements):
         stats.tsquared[kk, column] = (t[:, column].reshape(-1, 1).T @ S_var_tx_inv @ t[:, column])[0]
-    # print(stats.tsquared[kk, :])
 
-    # stats.tsquared = np.zeros([num.files, num.measurements])
+    if check_contributions == True:
+        print(f"T-squared statistic calculated normally: {stats.tsquared[kk, :]}")
+        stats.tsquared[kk, :] = 0
     for variable in range(0, num.variables):
         for measurement in range(0, num.measurements):
             contribution = np.linalg.solve( (L @ L.T + I_D/beta).T, L )[variable,:] @ S_var_tx_inv @ t[:, measurement] * x[variable, measurement]
             stats.tsquared_contributions[kk, variable] += contribution
-            # stats.tsquared[kk, measurement] += contribution
-    # print(stats.tsquared[kk, :]) # prove that T-squared contributions sum to T-squared statistic
+
+            if check_contributions == True:
+                stats.tsquared[kk, measurement] += contribution
+
+
+    if check_contributions == True:
+        print(f"T-squared statistic calculated by summing contributions: {stats.tsquared[kk, :]}")
 
     for tsquared in stats.tsquared[kk]:
         stats.tsquared_violations[kk] += tsquared > stats.tsquared95
-    
+
+
     # Q statistic
-    e = x - L@t # shape(t) = (m, n), residuals or error, inter alia
+    xbar = L @ t # shape(t) = (n, m), projection of the the score matrix back onto the original variable space
+    e = x - xbar # shape(t) = (m, n), residuals or error, inter alia
     stats.Q[kk, :] = np.sum(e**2, axis=0)
+
+    if check_contributions == True:
+        print(f"Q-statistic calculated normally: {stats.Q[kk, :]}")
+        stats.Q[kk, :] = 0
+    for column in range(0, num.measurements):
+        for variable in range(0, num.variables):
+            contribution = e[variable, column] * e[variable, column]
+            stats.Q_contributions[kk, variable] += contribution
+
+            if check_contributions == True:
+                stats.Q[kk, column] += contribution
+
+    if check_contributions == True:
+            print(f"Q-statistic calculated by summing contributions: {stats.Q[kk, :]}")
+            input("Press Enter to continue...")
+
     for Q in stats.Q[kk, :]:
         stats.Q_violations[kk] += Q > stats.Q95
+
     
     # PCA similarity statistic
-    stats.S_pca[kk] = np.trace(L.T@P@P.T@L) / k  
+    stats.S_pca[kk] = np.trace( L.T @ P @ P.T @L ) / k  
 
-    fault_index = np.where(operating_conditons == stats.H_faults[kk])[0][0]
+    if plot_components == True:
+        # PC 1 versus 2
+        ax[0].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # # plt.figure(1) # tsquared contributions
-    # ax[0, 0].plot(data.measured_variables, stats.tsquared_contributions[kk, :], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
+        # PC 2 versus 3
+        ax[1].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # # plt.figure(2) # PC 1 versus 2
-    # # plt.axes(projection='3d')
-    # ax[0, 1].plot(t[:, 0], t[:, 1], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+        # PC 1 versus 3
+        ax[2].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # # plt.figure(3) # PC 2 versus 3
-    # ax[1, 0].plot(t[:, 1], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+        ax3D.scatter(t[:, 0], t[:, 1], t[:, 2], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # # plt.figure(4) # PC 1 versus 3
-    # ax[1, 1].plot(t[:, 0], t[:, 2], marker = markers[fault_index], markerfacecolor='none', color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
+    if plot_statistics == True:
+        ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
+        ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+        ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
+        ax2[1].plot([num.ignore, num.ignore], [0, max(max(stats.tsquared[kk, :]),np.max(stats.tsquared95))], color = 'b', linestyle = '-.', label = "Fault occurrence")
+        ax2[1].xaxis.tick_top()
+        ax2[1].xaxis.set_label_position('top')
+        ax2[1].set_xlabel("Observation")
+        ax2[1].set_ylabel("Hotelling's T-squared statistic")
+        ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")
+        ax2[1].legend(loc = 'upper left')
+        ax2[0].set_title(f"Hotelling's T-squared contributions from each variable")
+        secax2 = ax2[1].secondary_xaxis('bottom', functions=(observation_to_time, time_to_observation))
+        secax2.set_xlabel('Time (min)')
+        fig2.show()
 
-    # ax2[0].bar(data.measured_variables, stats.tsquared_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
-    # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
-    # ax2[1].plot(np.linspace(1, num.measurements, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-', label = "Hotelling's T-squared statistic")
-    # ax2[1].plot([num.ignore, num.ignore], [0, 2*stats.tsquared95], color = 'r', linestyle = '-', label = "Fault occurrence")
-    # ax2[1].set_xlabel("Observation")
-    # ax2[1].set_ylabel("Hotelling's T-squared statistic")
-    # ax2[1].set_title(f"Hotelling's T-squared statistic for run {kk+1}, {stats.H_faults[kk]}")
-    # ax2[1].legend(loc = 'upper left')
-    # ax2[0].set_title(f"Hotelling's T-squared contributions from each variable")
-    # fig2.show()
-    # print(f"Violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
-    # input("Press Enter to continue...")
-    # ax2[0].cla()
-    # ax2[1].cla()
+        ax3[0].bar(data.measured_variables, stats.Q_contributions[kk, :], color=colours[fault_index % num.colours], linestyle='-', linewidth=0.3, label=f'{kk}, {stats.H_faults[kk]}')
+        ax3[1].plot(np.linspace(1, num.measurements, num.measurements), stats.Q95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+        ax3[1].plot(np.linspace(1, num.measurements, num.measurements), stats.Q[kk, :], color = 'k', linestyle = '-', label = "Q statistic")
+        ax3[1].plot([num.ignore, num.ignore], [0, max(max(stats.Q[kk, :]),np.max(stats.Q95))], color = 'b', linestyle = '-.', label = "Fault occurrence")
+        ax3[1].set_xlabel("Observation")
+        ax3[1].xaxis.tick_top()
+        ax3[1].xaxis.set_label_position('top')
+        ax3[1].set_ylabel("Q statistic (Squared Prediction Error)")
+        ax3[1].set_title(f"Q statistic for run {kk+1}, {stats.H_faults[kk]}")
+        ax3[1].legend(loc = 'upper left')
+        ax3[0].set_title(f"Q-statistic (SPE) contributions from each variable")
+        secax3 = ax3[1].secondary_xaxis('bottom', functions=(observation_to_time, time_to_observation))
+        secax3.set_xlabel('Time (min)')
+        fig3.show()
 
-    ax.scatter(t[0, :], t[1, :], t[2, :], marker = markers[fault_index], color=colours[fault_index % num.colours], linestyle='None', label=f'{kk}, {stats.H_faults[kk]}')
 
-    # ax3.plot(np.linspace(1, num.measurements, num.measurements), stats.Q95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
-    # ax3.plot(np.linspace(1, num.measurements, num.measurements), stats.Q, color = 'k', linestyle = '-', label = "Q statistic")
-    # ax3.plot([num.ignore, num.ignore], [0, 30], color = 'r', linestyle = '-', label = "Fault occurrence")
-    # ax3.set_xlabel("Observation")
-    # ax3.set_ylabel("Q statistic (Mean Squared Prediction Error)")
-    # ax3.set_title(f"Q statistic for run {kk+1}, {stats.H_faults[kk]}")
-    # ax3.legend(loc = 'upper left')
-    # fig3.show()
-    # print(f"Violations: {stats.Q_violations[kk]} out of {stats.r95}")
-    # input("Press Enter to continue...")
-    # ax3.cla()
+        input("Press Enter to continue...")
+        plt.close(fig2)
+        plt.close(fig3)
+
+    elif view_specific_run != None:
+        print(f"T-squared violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
+        print(f"Q violations: {stats.Q_violations[kk]} out of {stats.r95}")
+        input("Press Enter to continue...")
 
     printProgressBar(kk+1, num.files)
 
-names = list(stats.__dict__.keys())
-save = {}
-for index, item in enumerate(stats.__dict__.values()):
-    if type(item) == np.ndarray:
-        save[names[index]] = item.tolist() 
-    else:
-        save[names[index]] = item
-# with open("results/BPCA.json", "w") as json_file:
-#     json.dump(save, json_file)
+
+if view_specific_run == None:
+    ## saving results
+    names = list(stats.__dict__.keys())
+    save = {}
+
+    for index, item in enumerate(stats.__dict__.values()):
+        if type(item) == np.ndarray:
+            save[names[index]] = item.tolist() 
+        else:
+            save[names[index]] = item
+    with open(f"results/BPCA_{total_searches}_{int(100*(1-lim))}a.json", "w") as json_file:
+        json.dump(save, json_file)
 
 
-# ## Similarity stats
-# # A priori labelling for evaluating performance, not available for use
-# matches = stats.H_faults == stats.snapshot_fault
-# not_matches = [int(ii) for ii in ~matches.astype(bool)]
+if plot_components == True:
+    legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditons == fault)[0][0]], color = colours[np.where(operating_conditons == fault)[0][0] % num.colours], label=fault, linestyle='None', markerfacecolor='none') for fault in operating_conditons]
+    
+    ax[0].set_xlabel("PC 1")
+    ax[0].set_ylabel("PC 2")
+    ax[1].set_xlabel("PC 2")
+    ax[1].set_ylabel("PC 3")
+    ax[2].set_xlabel("PC 1")
+    ax[2].set_ylabel("PC 3")
+    ax[2].legend(handles=legend_elements, loc = 'right')
 
-# # Quantifying performance
-# Np = np.zeros(3)
-# N1 = np.zeros(3)
-# N2 = np.zeros(3)
-# p = np.zeros(3)
-# n = np.zeros(3)
-# nmax = np.zeros(3)
-# e = np.zeros(3)
-# Ndb = np.sum(matches) # historical windows that are actually similar
-
-# print(f"\nSnapshot fault: {stats.snapshot_fault}\n")
-
-# for ii, statistic in enumerate([["tsquared_violations", stats.r95],["Q_violations", stats.r95]]):#, ["Q_violations", stats.r95]]):
-#     candidate_pool = [int(ii) for ii in getattr(stats, statistic[0]) < statistic[1]]
-#     Np[ii] = np.sum(getattr(stats, statistic[0]) < statistic[1]) # candidate pool size (number of data sets classified as similar)
-#     N1[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (matches)) # candidate pool data sets that are actually similar
-#     N2[ii] = np.sum((getattr(stats, statistic[0]) < statistic[1]) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
-#     p[ii] = N1[ii] / Np[ii] * 100
-#     n[ii]= N1[ii] / Ndb * 100
-#     nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
-#     e[ii] = ( p[ii] + n[ii] ) / 2
-
-#     print(f"\n{statistic[0]} Results:")
-#     print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
-
-# # stats.S_pcaBest = 0.965
-# ii=2
-# candidate_pool = [int(ii) for ii in getattr(stats, "S_pca") > stats.S_pcaBest]
-# Np[ii] = np.sum(stats.S_pca > stats.S_pcaBest) # candidate pool size (number of data sets classified as similar)
-# N1[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (matches)) # candidate pool data sets that are actually similar
-# N2[ii] = np.sum((stats.S_pca > stats.S_pcaBest) * (not_matches)) # candidate pool data sets that are not similar (N2 = Np - N1)
-# p[ii] = N1[ii] / Np[ii] * 100
-# n[ii]= N1[ii] / Ndb * 100
-# nmax[ii] = np.min([Np[ii]/Ndb, 1]) * 100
-# e[ii] = ( p[ii] + n[ii] ) / 2
-
-# print(f"\nS_pca Results:")
-# print(f"Np     {Np[ii]}\nN1     {N1[ii]}\nN2     {N2[ii]}\nNdb    {Ndb}\np      {p[ii]}\nn      {n[ii]}\nnmax   {nmax[ii]}\ne      {e[ii]}")
-
-# legend_elements = [Line2D([0], [0], marker = markers[np.where(operating_conditons == fault)[0][0]], color = colours[np.where(operating_conditons == fault)[0][0] % num.colours], label=fault, linestyle='None', markerfacecolor='none') for fault in operating_conditons]
-
-# # plt.figure(1)
-# fig.legend(handles=legend_elements, loc = 'right')
-# ax[0, 0].set_ylabel("Hotelling's T-squared contributions")
-# ax[0, 0].set_xlabel("Measured variables")
-# # plt.figure(2)
-# # plt.legend(handles=legend_elements, loc = 'upper left', bbox_to_anchor = (1, 1))
-# ax[0, 1].set_xlabel("PC 1")
-# ax[0, 1].set_ylabel("PC 2")
-# # plt.figure(3)
-# # plt.legend(handles=legend_elements, loc = 'upper left', bbox_to_anchor = (1, 1))
-# ax[1, 0].set_xlabel("PC 2")
-# ax[1, 0].set_ylabel("PC 3")
-# # plt.figure(4)
-# # plt.legend(handles=legend_elements, loc = 'upper left', bbox_to_anchor = (1, 1))
-# ax[1, 1].set_xlabel("PC 1")
-# ax[1, 1].set_ylabel("PC 3")
-
+    ax3D.set_xlabel("PC 1")
+    ax3D.set_ylabel("PC 2")
+    ax3D.set_zlabel("PC 3")
+    ax3D.legend(handles=legend_elements, loc = 'center left')
+    plt.show()
 
 print(f"\n\nExecution time: {time.perf_counter() - timer_start} seconds")
-plt.show()

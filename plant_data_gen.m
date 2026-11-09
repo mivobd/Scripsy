@@ -16,15 +16,15 @@ tic
 % simulink file open to view the scopes as it runs is still recommended (I
 % especially recommend docking the 6 scopes for h, Q, lQ, T, Q_C, and lQ_C)
 
-% Are you generating a large data set (comparable, or the same, in size as
+% Are you generating a large data set comparable, or the same, in size as
 % used by Johannesmeyer?
-runs.full = 0; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
+runs.full = 1; % boolean, generate the full dataset (Snapshot: one for each operating condition; Historical: 463 total, 54 NOC) or not
 runs.NOC = 54; % integer, number of NOC windows
 runs.fault = 409; % integer, number of windows with faults
-runs.control = 1; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
+runs.control = 0; % boolean, control (1) or no control (0) (may be changed to generate data for both automatically, depending on requirements down the line)
 
 runs.snapshot_type = "N"; % string, the operating condition to be used for training
-snapshot_length = 1; % ~, ratio of snapshot length to historical window length
+snapshot_length = 10; % ~, ratio of snapshot length to historical window length
 simulation_time = 120; % min, how long the data windows should be (excluding the training set)
 
 % Noise settings
@@ -40,7 +40,7 @@ noise.AR.active = 1; % boolean, auto-regressive feed noise active or not
 % data set (settings below are overridden/ignored for full dataset
 % generation)
 model.runs = 1; % integer, number of simulation runs to be conducted
-model.folder = "data"; % string, where results are going to be saved 
+model.folder = "simulation_data/data"; % string, where results are going to be saved 
 
 % Controller settings
 model.control_arrangement = 0; % boolean, true for 1/TI, false for TI (implementation inside the Simulink controller block)
@@ -55,7 +55,7 @@ D.force.fault = "F6"; % string, fault ID, the fault you want to incur (refer to 
 D.force.mag = 5; % double, units as per fault ID (fault_details.txt contains all relevant info)
 
 %% Initialization
-folder_name = "results/H_C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active;
+folder_name = "simulation_data/C"+runs.control+"_AR"+noise.AR.active+"_M"+noise.M.active;
 if runs.full == 1
     % controller settings
     model.control_arrangement = 0;
@@ -337,7 +337,7 @@ for ii = 1:model.runs
     
     if runs.full == 1
         if ii <= runs.snapshot
-            model.time = simulation_time * 10; % larger training set
+            model.time = simulation_time * snapshot_length; % larger training set
         else 
             model.time = simulation_time;
         end
