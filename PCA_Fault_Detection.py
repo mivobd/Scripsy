@@ -117,6 +117,7 @@ plot_statistics = False # boolean, set to true to view T-squared and Q-statistic
 check_contributions = False # boolean, prints the value of T-squared calculated normally versus as the sum of contributions from variables.
 view_specific_run = 98 # integer, "None" by default for normal script execution. Set to the run number you want to view.
 plot_components = False # boolean, set to true to view the first three principal components for each run on a 3D scatter plot (highly recommend using the "view_specific_run" to check random runs. Most interesting are step change faults.
+poster_plots = False # boolean, set to true to view the plots in a format suitable for poster presentation.
 
 
 """
@@ -468,6 +469,24 @@ for kk in range(start, num.files):
         input("Press Enter to continue...")
         plt.close(fig2)
         plt.close(fig3)
+
+    if poster_plots == True:
+        ax2[0].plot(np.linspace(5/60, 120, num.measurements), stats.tsquared95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence")
+        ax2[0].plot(np.linspace(5/60, 120, num.measurements), stats.tsquared[kk, :], color = 'k', linestyle = '-')
+        ax2[0].plot([num.ignore*5/60, num.ignore*5/60], [0, max(max(stats.tsquared[kk, :]),np.max(stats.tsquared95))], color = 'b', linestyle = '-.', label = "Fault occurrence")
+        ax2[0].set_ylabel(r"T$^{2}$ statistic", fontsize=30)
+        ax2[0].legend(loc = 'upper left', fontsize=30)
+        ax2[0].tick_params(axis='both', labelsize=26)
+
+        ax2[1].plot(np.linspace(5/60, 120, num.measurements), stats.Q95*np.ones(num.measurements), color = 'r', linestyle = '--', label = "95% confidence limit")
+        ax2[1].plot(np.linspace(5/60, 120, num.measurements), stats.Q[kk, :], color = 'k', linestyle = '-', label = "Q statistic")
+        ax2[1].plot([num.ignore*5/60, num.ignore*5/60], [0, max(max(stats.Q[kk, :]),np.max(stats.Q95))], color = 'b', linestyle = '-.', label = "Fault occurrence")
+        ax2[1].set_xlabel("Time (min)", fontsize=30)
+        ax2[1].set_ylabel("Q-statistic", fontsize=30)
+        ax2[1].tick_params(axis='both', labelsize=26)
+
+        ax2[0].set_title(f"Fault: Inlet Flow Rate Step Change", fontsize=36)
+        fig2.show()
 
     elif view_specific_run != None:
         print(f"T-squared violations: {stats.tsquared_violations[kk]} out of {stats.r95}")
